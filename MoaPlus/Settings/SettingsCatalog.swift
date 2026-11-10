@@ -220,6 +220,12 @@ enum SettingsCatalog {
             keywords: ["커서", "스페이스", "드래그", "이동", "연속"]
         ),
         SettingsEntry(
+            title: "단어 추천 · 입력 학습",
+            icon: "text.badge.star",
+            destination: .inputBehavior,
+            keywords: ["추천", "예측", "자동완성", "완성", "학습", "단어", "후보", "다음단어", "제안"]
+        ),
+        SettingsEntry(
             title: "괄호 자동 닫기 · 더블 스페이스 마침표",
             icon: "gearshape",
             destination: .inputBehavior,

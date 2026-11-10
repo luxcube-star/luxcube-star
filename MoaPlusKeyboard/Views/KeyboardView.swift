@@ -234,7 +234,7 @@ struct KeyboardView: View {
             // `keyHeight(for:)` 는 주어진 높이를 그리드 행에 전부 나눠주므로, 컨테이너만
             // 키워 두면 늘어난 높이를 키들이 그대로 흡수해 버리고 후보 바는 여전히
             // 아래로 넘쳐 기능행이 잘린다(실기기 확인).
-            let candidateBarFootprint: CGFloat = viewModel.isAbbreviationCandidateVisible
+            let candidateBarFootprint: CGFloat = viewModel.isCandidateBarVisible
                 ? KeyboardMetrics.abbreviationCandidateBarFootprint
                 : 0
             let screen = UIScreen.main.bounds
@@ -273,17 +273,26 @@ struct KeyboardView: View {
 
                 ZStack {
                     VStack(spacing: KeyboardMetrics.keySpacing) {
-                        // Abbreviation candidate bar.
-                        // 표시 조건은 `isAbbreviationCandidateVisible` **하나만** 본다 —
+                        // 후보 바 자리 (약어 후보 바 또는 단어 추천 바).
+                        // 자리를 차지할지는 `isCandidateBarVisible` **하나만** 본다 —
                         // KeyboardViewController 의 높이 보정이 같은 플래그를 구독하므로,
                         // 여기에 조건을 더 붙이면 둘이 어긋나 높이가 안 맞는다.
-                        if viewModel.isAbbreviationCandidateVisible {
-                            AbbreviationCandidateView(
-                                trigger: viewModel.abbreviationCandidates.first?.trigger ?? "",
-                                candidates: viewModel.abbreviationCandidates,
-                                onConfirm: { expansion in viewModel.confirmAbbreviation(expansion) },
-                                onDismiss: { viewModel.dismissAbbreviation() }
-                            )
+                        // 둘이 겹치면 약어 후보가 우선이다 (확정/취소를 기다리는 중이라서).
+                        if viewModel.isCandidateBarVisible {
+                            if viewModel.isAbbreviationCandidateVisible {
+                                AbbreviationCandidateView(
+                                    trigger: viewModel.abbreviationCandidates.first?.trigger ?? "",
+                                    candidates: viewModel.abbreviationCandidates,
+                                    onConfirm: { expansion in viewModel.confirmAbbreviation(expansion) },
+                                    onDismiss: { viewModel.dismissAbbreviation() }
+                                )
+                            } else {
+                                PredictionBarView(
+                                    suggestions: viewModel.predictionSuggestions,
+                                    onSelect: { word in viewModel.acceptPrediction(word) },
+                                    onForget: { word in viewModel.forgetPrediction(word) }
+                                )
+                            }
                         }
 
                         if useSplit {

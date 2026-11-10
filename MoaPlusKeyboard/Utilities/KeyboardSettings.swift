@@ -48,6 +48,9 @@ final class KeyboardSettings: ObservableObject {
         static let cursorMoveBySpaceDragEnabled = "cursorMoveBySpaceDragEnabled"
         static let cursorRepeatSpeed = "cursorRepeatSpeed"
         static let periodOnDoubleSpace = "periodOnDoubleSpace"
+        static let predictionEnabled = "predictionEnabled"
+        static let predictionLearningEnabled = "predictionLearningEnabled"
+        static let predictionResetToken = "predictionResetToken"
         static let abbreviationEnabled = "abbreviationEnabled"
         static let abbreviationUndoOnBackspace = "abbreviationUndoOnBackspace"
         static let abbreviationKeepConfirmSpace = "abbreviationKeepConfirmSpace"
@@ -363,6 +366,22 @@ final class KeyboardSettings: ObservableObject {
         didSet { guard !isLoading else { return }; writePrimitive(periodOnDoubleSpaceEnabled, forKey: Keys.periodOnDoubleSpace) }
     }
 
+    /// 학습한 단어 추천 바 표시 (기본 ON). 끄면 바가 사라지고 키보드 높이도 원래대로 돌아간다.
+    @Published var predictionEnabled: Bool = true {
+        didSet { guard !isLoading else { return }; writePrimitive(predictionEnabled, forKey: Keys.predictionEnabled) }
+    }
+
+    /// 입력을 끝낸 단어를 기기 안에 학습 (기본 ON). 끄면 이미 학습한 단어로 추천만 한다.
+    @Published var predictionLearningEnabled: Bool = true {
+        didSet { guard !isLoading else { return }; writePrimitive(predictionLearningEnabled, forKey: Keys.predictionLearningEnabled) }
+    }
+
+    /// 메인 앱의 "학습 데이터 지우기" 요청. 값이 바뀌면 키보드가 자기 학습 데이터를 비운다 —
+    /// 전체 접근이 꺼져 있으면 메인 앱이 키보드 쪽 파일을 직접 지울 수 없어서 이 신호를 쓴다.
+    @Published var predictionResetToken: String = "" {
+        didSet { guard !isLoading else { return }; writePrimitive(predictionResetToken, forKey: Keys.predictionResetToken) }
+    }
+
     /// Capitalize the first letter of a sentence in English mode (default OFF).
     /// iOS never forwards its own auto-capitalization to custom keyboards, so
     /// we arm `shiftState = .on` ourselves at sentence starts.
@@ -587,6 +606,9 @@ final class KeyboardSettings: ObservableObject {
         assign(\.cursorMoveBySpaceDragEnabled, defaults.object(forKey: Keys.cursorMoveBySpaceDragEnabled) as? Bool ?? true)
         assign(\.cursorRepeatSpeed, defaults.object(forKey: Keys.cursorRepeatSpeed) as? Int ?? 1)
         assign(\.periodOnDoubleSpaceEnabled, defaults.object(forKey: Keys.periodOnDoubleSpace) as? Bool ?? true)
+        assign(\.predictionEnabled, defaults.object(forKey: Keys.predictionEnabled) as? Bool ?? true)
+        assign(\.predictionLearningEnabled, defaults.object(forKey: Keys.predictionLearningEnabled) as? Bool ?? true)
+        assign(\.predictionResetToken, defaults.string(forKey: Keys.predictionResetToken) ?? "")
         assign(\.englishAutoCapitalizeEnabled, defaults.object(forKey: Keys.englishAutoCapitalize) as? Bool ?? false)
         assign(\.englishLongPressUppercaseEnabled, defaults.object(forKey: Keys.englishLongPressUppercase) as? Bool ?? true)
         assign(\.layoutCustomization, load(LayoutCustomization.self, forKey: Keys.layoutCustomization) ?? LayoutCustomization())
@@ -745,6 +767,8 @@ final class KeyboardSettings: ObservableObject {
         cursorMoveBySpaceDragEnabled = true
         cursorRepeatSpeed = 1
         periodOnDoubleSpaceEnabled = true
+        predictionEnabled = true
+        predictionLearningEnabled = true
         englishAutoCapitalizeEnabled = false
         englishLongPressUppercaseEnabled = true
         layoutCustomization = LayoutCustomization()

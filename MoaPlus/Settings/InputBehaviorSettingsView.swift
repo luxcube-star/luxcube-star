@@ -5,9 +5,32 @@ import SwiftUI
 
 struct InputBehaviorSettingsView: View {
     @ObservedObject private var settings = KeyboardSettings.shared
+    @State private var isConfirmingPredictionReset = false
+    @State private var didResetPrediction = false
 
     var body: some View {
         List {
+            Section {
+                Toggle("단어 추천 바", isOn: $settings.predictionEnabled)
+                Toggle("입력한 단어 학습", isOn: $settings.predictionLearningEnabled)
+                Button(role: .destructive) {
+                    isConfirmingPredictionReset = true
+                } label: {
+                    Text(didResetPrediction ? "학습 데이터를 지웠습니다" : "학습 데이터 지우기")
+                }
+                .disabled(didResetPrediction)
+            } header: {
+                Text("단어 추천")
+            } footer: {
+                Text("자주 쓰는 단어를 학습해 키보드 위에 추천합니다. 입력 중인 단어를 완성하거나(예: \"감정\" → \"감정평가서\"), 스페이스를 친 뒤 다음에 이어 쓸 단어를 보여 줍니다. 추천 단어를 탭하면 입력되고, 길게 누르면 그 단어를 잊습니다.\n\n학습 데이터는 이 기기 안에만 저장되며 외부로 전송되지 않습니다. 숫자가 들어간 단어와 이메일·주소·전화번호·비밀번호·인증번호 입력란의 내용은 학습하지 않습니다.")
+            }
+            .confirmationDialog("학습한 단어를 모두 지울까요?", isPresented: $isConfirmingPredictionReset, titleVisibility: .visible) {
+                Button("모두 지우기", role: .destructive) { resetPrediction() }
+                Button("취소", role: .cancel) {}
+            } message: {
+                Text("키보드의 \"전체 접근 허용\"이 꺼져 있으면 키보드가 이 요청을 받지 못할 수 있습니다. 그때는 추천 단어를 길게 눌러 하나씩 지워 주세요.")
+            }
+
             Section {
                 Toggle("괄호 자동 닫기", isOn: $settings.autoBracketEnabled)
             } footer: {
@@ -50,6 +73,14 @@ struct InputBehaviorSettingsView: View {
             }
         }
         .navigationTitle("입력 동작")
+    }
+
+    /// 앱이 지울 수 있는 파일(공유 컨테이너)은 바로 지우고, 키보드 쪽 파일은 토큰을 바꿔
+    /// 키보드가 다음에 뜰 때 스스로 비우게 한다.
+    private func resetPrediction() {
+        PredictionStore.deleteAll()
+        settings.predictionResetToken = UUID().uuidString
+        didResetPrediction = true
     }
 }
 

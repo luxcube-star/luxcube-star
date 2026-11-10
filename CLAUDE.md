@@ -714,6 +714,16 @@ v2.2.5 까지 ↗/↘ 를 꺼도 ㅣ/ㅡ 가 들어갔다 — `normalizedDirecti
 - 등록 제한(`abbreviationTriggerPolicy`)은 **메인 앱 UI 전용**이다. 엔진에 길이 필터를 넣으면
   이미 등록된 1글자 단축어가 죽는다(소급 적용 없음)
 
+### 학습형 단어 추천 (PredictionEngine)
+- 후보 바 자리는 `isCandidateBarVisible` **하나**로 정한다 (= 약어 후보 표시 || (추천 ON && !previewMode)).
+  `KeyboardView` 그리드 배분과 `KeyboardViewController` 높이 보정이 둘 다 이 플래그를 본다 — 따로 보면 기능행이 잘린다.
+- 추천 갱신은 컨트롤러의 프록시 변경(insert/delete/updateComposingText/moveCursor)마다
+  `schedulePredictionRefresh()` 로 **다음 런루프 틱**에 한 번 돈다 (자동 대문자와 같은 이유: 문맥 반영 지연).
+- 학습은 스페이스·엔터·기호 입력이 `pendingPredictionLearn` 을 세우고, 다음 갱신이 문맥에서 끝난 단어를 읽어 학습한다.
+  `completedWord` 서명으로 "안녕 " → "안녕. " 같은 중복 학습을 막는다.
+- 추천 선택은 조합 상태를 버리고(`commitCurrent` 아님 — 약어 엔진에 흘리지 않기 위해) 화면의 입력 중 단어를 지운 뒤 단어 + 스페이스.
+- 저장은 App Group 파일 우선, 실패하면 익스텐션 로컬. 로컬 파일을 읽지 못하면(기기 보호) 저장을 막아 덮어쓰기를 피한다.
+
 ### 커서 이동 / 약어 리셋 패턴
 ```swift
 func moveCursor(by offset: Int) {

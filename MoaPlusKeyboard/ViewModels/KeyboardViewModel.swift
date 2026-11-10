@@ -67,7 +67,9 @@ class KeyboardViewModel: ObservableObject {
     /// settings preview (LayoutCustomizationView) so the user can try the
     /// vowel key without affecting any text field. All other input methods
     /// (consonants, backspace, function keys) silently no-op in preview mode.
-    var previewMode: Bool = false
+    var previewMode: Bool = false {
+        didSet { updateCandidateBarVisibility() }
+    }
     var onPreviewVowel: ((Jungseong) -> Void)? = nil
     /// Same as `onPreviewVowel` but also forwards the gesture start point in
     /// the named "keyboardPreview" coordinate space so callers can position
@@ -161,7 +163,9 @@ class KeyboardViewModel: ObservableObject {
     /// symbol layer right now?". Mode is mutated through `toggleSymbolMode()`
     /// or by assigning `keyboardMode` directly.
     var isSymbolMode: Bool { keyboardMode.isSymbol }
-    @Published var isAbbreviationCandidateVisible: Bool = false
+    @Published var isAbbreviationCandidateVisible: Bool = false {
+        didSet { updateCandidateBarVisibility() }
+    }
     @Published var abbreviationCandidate: ShortcutExpansion?
     @Published var abbreviationCandidates: [ShortcutExpansion] = []
 
@@ -244,6 +248,30 @@ class KeyboardViewModel: ObservableObject {
     private let vowelResolver = VowelResolver()
     private let abbreviationEngine = AbbreviationEngine()
 
+    // MARK: Prediction (학습형 단어 추천)
+
+    /// 키보드 맨 위 후보 바 자리를 쓰는지. 약어 후보 바 또는 단어 추천 바가 쓴다.
+    /// `KeyboardViewController` 의 높이 보정과 `KeyboardView` 의 그리드 배분이 **이 값 하나**를
+    /// 본다 — 둘이 다른 조건을 보면 바가 뜰 때 기능행이 잘린다 (약어 후보 바와 같은 규칙).
+    @Published private(set) var isCandidateBarVisible: Bool = false
+    /// 추천 바에 보여 줄 단어. 비어 있으면 바는 빈 채로 자리만 지킨다.
+    @Published private(set) var predictionSuggestions: [String] = []
+
+    /// 실제 키보드에서만 디스크에서 읽는다 — 첫 사용 시점까지 미뤄 테스트·미리보기는 건드리지 않는다.
+    private lazy var predictionEngine: PredictionEngine = {
+        let loaded = PredictionStore.load()
+        self.predictionStoreWritable = loaded.isWritable
+        return PredictionEngine(model: loaded.model)
+    }()
+    private var predictionStoreWritable = true
+    /// 스페이스·엔터·문장부호를 쳐서 단어 하나가 끝났을 수 있음. 다음 갱신에서 학습한다.
+    private var pendingPredictionLearn = false
+    /// 마지막으로 학습한 문맥. 같은 단어를 두 번 세지 않는 데 쓴다.
+    private var lastLearnedSignature: String?
+    private var predictionRefreshScheduled = false
+    private var predictionSaveWorkItem: DispatchWorkItem?
+    private var predictionSettingsCancellables = Set<AnyCancellable>()
+
     /// 직전 확장이 확정 구분자를 화면에 남겼는지. 되돌리기(`shouldRestore`)가 지울 길이를
     /// 정하는 데 쓴다 — 엔진은 확장 직후에만 복원을 요청하므로 이 값은 항상 짝이 맞는다.
     private var lastExpansionKeptDelimiter: Bool = true
@@ -313,8 +341,13 @@ class KeyboardViewModel: ObservableObject {
 
     weak var delegate: KeyboardViewModelDelegate?
 
-    init(backspaceRepeatInitialDelay: TimeInterval = 0.4) {
+    /// - Parameter predictionEngine: 테스트용 주입. 넘기면 디스크에서 읽지도, 디스크에 쓰지도 않는다.
+    init(backspaceRepeatInitialDelay: TimeInterval = 0.4, predictionEngine: PredictionEngine? = nil) {
         self.backspaceRepeatInitialDelay = backspaceRepeatInitialDelay
+        if let predictionEngine {
+            self.predictionEngine = predictionEngine
+            self.predictionStoreWritable = false
+        }
         // Restore last letter mode before first render so there is no flicker.
         let settings = KeyboardSettings.shared
         if settings.rememberLastKeyboardMode, settings.lastKeyboardLetterMode == "english" {
@@ -322,6 +355,8 @@ class KeyboardViewModel: ObservableObject {
         }
         reloadAbbreviationEngine()
         observeExpansionStore()
+        observePredictionSettings()
+        updateCandidateBarVisibility()
     }
 
     /// Push the live center-key width into the gesture analyzer so the
@@ -747,6 +782,7 @@ class KeyboardViewModel: ObservableObject {
     func inputSymbol(_ symbol: String, bypassAutoBracket: Bool = false) {
         typoMarkPending = false
         if previewMode { return }
+        pendingPredictionLearn = true
         let resolved = shiftedSymbolIfNeeded(symbol)
         commitCurrent()
         if !bypassAutoBracket && insertWithAutoBracket(resolved) {
@@ -921,6 +957,7 @@ class KeyboardViewModel: ObservableObject {
     func inputSpace() {
         typoMarkPending = false
         if previewMode { return }
+        pendingPredictionLearn = true
         // Commit composing text first (feeds abbreviation engine via commitCurrent)
         commitCurrent()
         // An abbreviation that just expanded already inserted its own trailing
@@ -964,6 +1001,7 @@ class KeyboardViewModel: ObservableObject {
     func inputReturn() {
         typoMarkPending = false
         if previewMode { return }
+        pendingPredictionLearn = true
         commitCurrent()
         abbreviationEngine.processCharacter("\n")
         if !abbreviationEngine.canRestoreLastExpansion {
@@ -1429,6 +1467,143 @@ class KeyboardViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Prediction (학습형 단어 추천)
+
+    private func observePredictionSettings() {
+        let settings = KeyboardSettings.shared
+        // `@Published` 는 willSet 에서 발행하므로 받은 값을 그대로 쓴다.
+        settings.$predictionEnabled
+            .removeDuplicates()
+            .sink { [weak self] enabled in
+                self?.updateCandidateBarVisibility(predictionEnabled: enabled)
+                if !enabled { self?.setPredictionSuggestions([]) }
+            }
+            .store(in: &predictionSettingsCancellables)
+        settings.$predictionResetToken
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] token in self?.applyPredictionResetIfNeeded(token: token) }
+            .store(in: &predictionSettingsCancellables)
+    }
+
+    private func updateCandidateBarVisibility(
+        predictionEnabled: Bool = KeyboardSettings.shared.predictionEnabled
+    ) {
+        // 미리보기(메인 앱 설정 화면)는 추천 바 몫의 높이를 받지 않으므로 그리지 않는다.
+        let visible = isAbbreviationCandidateVisible || (predictionEnabled && !previewMode)
+        if isCandidateBarVisible != visible { isCandidateBarVisible = visible }
+    }
+
+    private func setPredictionSuggestions(_ suggestions: [String]) {
+        if predictionSuggestions != suggestions { predictionSuggestions = suggestions }
+    }
+
+    /// 다음 런루프 틱에 추천을 다시 계산한다. 한 키에 삽입·삭제가 여러 번 일어나도 한 번만 돈다.
+    ///
+    /// 다음 틱으로 미루는 이유는 자동 대문자와 같다: 방금 넣은 글자가 프록시의
+    /// `documentContextBeforeInput` 에 아직 반영되지 않았을 수 있다.
+    func schedulePredictionRefresh() {
+        guard !predictionRefreshScheduled else { return }
+        predictionRefreshScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            self?.predictionRefreshScheduled = false
+            self?.refreshPredictions()
+        }
+    }
+
+    /// 문맥을 읽어 (끝난 단어가 있으면 학습하고) 추천을 갱신한다.
+    func refreshPredictions() {
+        guard !previewMode else { return }
+        let settings = KeyboardSettings.shared
+        let before = delegate?.textBeforeCursor() ?? ""
+
+        if pendingPredictionLearn {
+            pendingPredictionLearn = false
+            if settings.predictionLearningEnabled, delegate?.hostAllowsLearning() ?? true {
+                learnCompletedWord(in: before)
+            }
+        }
+
+        guard settings.predictionEnabled else {
+            setPredictionSuggestions([])
+            return
+        }
+        applyPredictionResetIfNeeded(token: settings.predictionResetToken)
+        let context = PredictionEngine.currentContext(in: before)
+        setPredictionSuggestions(
+            predictionEngine.suggestions(prefix: context.current, previous: context.previous))
+    }
+
+    private func learnCompletedWord(in before: String) {
+        guard let completed = PredictionEngine.completedWord(in: before),
+              completed.signature != lastLearnedSignature else { return }
+        lastLearnedSignature = completed.signature
+        applyPredictionResetIfNeeded(token: KeyboardSettings.shared.predictionResetToken)
+        if predictionEngine.learn(word: completed.word, previous: completed.previous) {
+            schedulePredictionSave()
+        }
+    }
+
+    /// 추천 단어를 골랐다: 입력 중인 단어를 지우고 고른 단어 + 스페이스를 넣는다.
+    func acceptPrediction(_ word: String) {
+        guard !previewMode else { return }
+        let before = delegate?.textBeforeCursor() ?? ""
+        let current = PredictionEngine.currentContext(in: before).current
+        // 조합 중인 글자는 이미 화면에 있고 `current` 에 포함돼 있다. 조합 상태만 버리고
+        // 화면의 글자는 아래에서 함께 지운다 (`commitCurrent` 는 약어 엔진에 글자를
+        // 흘려보내므로 쓰지 않는다).
+        lastComposingText = ""
+        composer.reset()
+        abbreviationEngine.resetBuffer()
+        for _ in 0..<current.count {
+            delegate?.deleteBackward()
+        }
+        delegate?.insertText(PredictionEngine.matchingCase(of: word, to: current) + " ")
+        pendingPredictionLearn = true
+        triggerHapticFeedback()
+        scheduleAutoCapitalizationRefresh()
+        schedulePredictionRefresh()
+    }
+
+    /// 추천 단어를 길게 눌렀다: 학습 데이터에서 지운다.
+    func forgetPrediction(_ word: String) {
+        guard !previewMode else { return }
+        predictionEngine.forget(word: word)
+        schedulePredictionSave()
+        HapticManager.shared.playLongPress()
+        refreshPredictions()
+    }
+
+    /// 메인 앱에서 "학습 데이터 지우기"를 눌렀으면 키보드 쪽 학습 데이터도 비운다.
+    private func applyPredictionResetIfNeeded(token: String) {
+        guard !token.isEmpty, token != predictionEngine.model.appliedResetToken else { return }
+        predictionEngine.reset(appliedResetToken: token)
+        lastLearnedSignature = nil
+        setPredictionSuggestions([])
+        schedulePredictionSave()
+    }
+
+    /// 학습할 때마다 바로 쓰지 않고 잠시 모아 한 번에 저장한다.
+    private func schedulePredictionSave() {
+        guard predictionStoreWritable else { return }
+        predictionSaveWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            PredictionStore.save(self.predictionEngine.model)
+        }
+        predictionSaveWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: work)
+    }
+
+    /// 키보드가 닫힐 때 미뤄 둔 저장을 바로 실행한다.
+    func flushPredictionSave() {
+        guard let work = predictionSaveWorkItem else { return }
+        predictionSaveWorkItem = nil
+        work.cancel()
+        guard predictionStoreWritable else { return }
+        PredictionStore.save(predictionEngine.model)
+    }
+
     // MARK: - Public State Reset (for external text field changes)
 
     func resetComposer() {
@@ -1827,9 +2002,14 @@ protocol KeyboardViewModelDelegate: AnyObject {
     /// empty field (no context because there is nothing) from a secure field
     /// (text exists, context withheld).
     func hostHasText() -> Bool
+
+    /// 이 입력란에서 입력한 단어를 학습해도 되는지. 이메일·URL·숫자·비밀번호·인증번호처럼
+    /// 개인 정보이거나 단어가 아닌 입력란에서는 `false`. 추천 표시는 막지 않는다.
+    func hostAllowsLearning() -> Bool
 }
 
 extension KeyboardViewModelDelegate {
+    func hostAllowsLearning() -> Bool { true }
     func hideKeyboard() {}
     func triggerLayerSwitchFeedback() {}
     func triggerLongPressFeedback() {}

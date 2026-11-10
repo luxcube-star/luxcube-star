@@ -119,6 +119,7 @@ class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedback {
         viewModel.canSwitchInputMode = needsInputModeSwitchKey
         // 빈 필드로 새로 열렸을 때는 textDidChange 가 아직 한 번도 불리지 않는다.
         viewModel.refreshAutoCapitalization()
+        viewModel.schedulePredictionRefresh()
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -126,6 +127,7 @@ class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedback {
         // `viewWillAppear` 시점에는 프록시가 아직 호스트 필드에 붙기 전일 수 있어
         // 문맥이 비어 온다. 등장이 끝난 뒤 한 번 더 판정한다 (멱등).
         viewModel.refreshAutoCapitalization()
+        viewModel.refreshPredictions()
 
         // 전체 접근 허용 상태를 App Group 에 남긴다 (개발자 리포트 판독용). 꺼져 있으면
         // 공유 컨테이너 자체를 못 써 이 기록은 앱에 도달하지 않는다 — 리포트에 "기록
@@ -155,6 +157,8 @@ class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedback {
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         EarlyTouchDiagnostics.flush(force: true)
+        // 미뤄 둔 학습 데이터 저장을 키보드가 내려가기 전에 끝낸다.
+        viewModel.flushPredictionSave()
         // The keyboard can be torn down mid-press — e.g. the host app presents
         // a photo picker while the finger is still holding backspace. The
         // repeat timer is driven by a Timer, not by touch events, so nothing
@@ -321,7 +325,8 @@ class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedback {
     /// 후보 바 표시/숨김에 맞춰 키보드 높이를 늘렸다 줄인다.
     /// 이게 없으면 바가 뜨는 순간 기능행(스페이스·엔터)이 화면 밖으로 밀려 잘린다.
     private func observeCandidateBar() {
-        candidateBarCancellable = viewModel.$isAbbreviationCandidateVisible
+        // 약어 후보 바와 단어 추천 바가 같은 자리를 쓰므로 둘을 합친 플래그를 본다.
+        candidateBarCancellable = viewModel.$isCandidateBarVisible
             .removeDuplicates()
             .sink { [weak self] visible in
                 guard let self, self.isCandidateBarVisible != visible else { return }
@@ -449,6 +454,8 @@ class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedback {
             // 않은 호스트가 있어(". " 를 넣었는데 "." 로 읽힘) 자동 대문자가
             // 될 때도 있고 안 될 때도 있는 간헐 증상이 된다.
             self?.viewModel.refreshAutoCapitalization()
+            // 호스트가 글을 바꿨을 때(보내기 후 입력란 비움 등) 추천도 새 문맥에 맞춘다.
+            self?.viewModel.refreshPredictions()
         }
     }
 
@@ -463,6 +470,7 @@ class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedback {
         // handleExternalCursorMove is a harmless no-op there.
         if isProgrammaticTextChange { return }
         viewModel.handleExternalCursorMove()
+        viewModel.schedulePredictionRefresh()
     }
 }
 
@@ -470,10 +478,12 @@ class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedback {
 extension KeyboardViewController: KeyboardViewModelDelegate {
     func insertText(_ text: String) {
         textDocumentProxy.insertText(text)
+        viewModel.schedulePredictionRefresh()
     }
 
     func deleteBackward() {
         textDocumentProxy.deleteBackward()
+        viewModel.schedulePredictionRefresh()
     }
 
     func updateComposingText(from previous: String, to current: String) {
@@ -490,6 +500,7 @@ extension KeyboardViewController: KeyboardViewModelDelegate {
         if !current.isEmpty {
             textDocumentProxy.insertText(current)
         }
+        viewModel.schedulePredictionRefresh()
     }
 
     func switchToNextKeyboard() {
@@ -524,6 +535,7 @@ extension KeyboardViewController: KeyboardViewModelDelegate {
 
     func moveCursor(by offset: Int) {
         textDocumentProxy.adjustTextPosition(byCharacterOffset: offset)
+        viewModel.schedulePredictionRefresh()
     }
 
     func textBeforeCursor() -> String? {
@@ -542,6 +554,29 @@ extension KeyboardViewController: KeyboardViewModelDelegate {
     /// 쓰지 않는다 — 실기기에서 평범한 빈 입력창도 `.none` 으로 와서 기능 자체를
     /// 막았다(2026-09-02 진단 `allows=false`). 비밀번호 같은 시큐어 필드는 캐럿 앞
     /// 문맥을 아예 주지 않아 `shouldArmAutoCapitalization` 이 이미 판정을 포기한다.
+    /// 단어 학습을 막을 입력란: 이메일·URL·숫자 패드, 그리고 계정·비밀번호·인증번호·
+    /// 카드번호·연락처처럼 개인 정보를 담는 용도. (비밀번호 입력란은 iOS 가 애초에
+    /// 서드파티 키보드를 띄우지 않지만, 용도만 선언한 입력란도 있어 함께 막는다.)
+    func hostAllowsLearning() -> Bool {
+        switch textDocumentProxy.keyboardType {
+        case .emailAddress, .URL, .webSearch,
+             .numberPad, .phonePad, .decimalPad, .namePhonePad, .asciiCapableNumberPad:
+            return false
+        default:
+            break
+        }
+        switch textDocumentProxy.textContentType {
+        case .some(.emailAddress), .some(.username), .some(.password),
+             .some(.newPassword), .some(.oneTimeCode), .some(.URL),
+             .some(.creditCardNumber), .some(.telephoneNumber),
+             .some(.fullStreetAddress), .some(.streetAddressLine1), .some(.streetAddressLine2),
+             .some(.postalCode):
+            return false
+        default:
+            return true
+        }
+    }
+
     func hostAllowsAutoCapitalization() -> Bool {
         switch textDocumentProxy.keyboardType {
         case .emailAddress, .URL, .webSearch,
