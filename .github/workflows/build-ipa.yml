@@ -54,6 +54,21 @@ jobs:
           fi
           echo "앱: $APP"
           ls "$APP/PlugIns" || echo "::warning::키보드 익스텐션(PlugIns)이 없습니다."
+          # AltStore/AltServer 는 기본 Info.plist 이름으로 App ID 를 등록한다 — 영문·숫자·공백만 허용.
+          for bundle in "$APP" "$APP"/PlugIns/*.appex; do
+            NAME=$(/usr/libexec/PlistBuddy -c "Print :CFBundleDisplayName" "$bundle/Info.plist" 2>/dev/null \
+              || /usr/libexec/PlistBuddy -c "Print :CFBundleName" "$bundle/Info.plist")
+            echo "이름: $bundle → $NAME"
+            if ! printf '%s' "$NAME" | grep -Eq '^[A-Za-z0-9 ]+$'; then
+              echo "::error::$bundle 의 이름 '$NAME' 에 App ID 로 쓸 수 없는 글자가 있습니다."
+              exit 1
+            fi
+            if [ -f "$bundle/ko.lproj/InfoPlist.strings" ]; then
+              echo "한국어 이름:"; plutil -p "$bundle/ko.lproj/InfoPlist.strings"
+            else
+              echo "::warning::$bundle 에 ko.lproj/InfoPlist.strings 가 없습니다 (한국어 이름이 안 보임)."
+            fi
+          done
           rm -rf Payload && mkdir Payload
           cp -R "$APP" Payload/
           zip -qry MoaPlusRecommend.ipa Payload
