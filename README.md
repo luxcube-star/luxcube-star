@@ -42,6 +42,13 @@
 - `MoaPlusKeyboard/Views/PredictionBarView.swift` — 추천 바 화면
 - `MoaPlusKeyboardTests/PredictionEngineTests.swift`, `KeyboardViewModelPredictionTests.swift` — 테스트
 
+## 긋기 미리보기 개선 (이 수정판에서 추가)
+
+- 긋는 동안 **입력될 글자**를 크게 보여 줍니다 (ㅈ 키에서 ↑ → **조**). 원본은 모음(ㅗ)만 보여 줬습니다.
+- 설정 › 긋기 입력 설정 › **미리보기 위치**: 오른손(왼쪽 위, 기본) / 가운데 위 / 왼손(오른쪽 위) / 자동(원본 방식).
+  원본은 누른 키의 반대편에 띄워서, 오른손 하나로 왼쪽 키를 그으면 미리보기가 손에 가려졌습니다.
+- 이 수정판은 미리보기가 기본으로 켜져 있습니다.
+
 ## 내 아이폰에 직접 빌드해 설치하기
 
 Mac 의 Xcode 가 필요합니다. 무료 Apple 계정으로 설치한 앱은 7일마다 다시 설치해야 합니다. 유료 Apple Developer

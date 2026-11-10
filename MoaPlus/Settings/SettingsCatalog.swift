@@ -220,6 +220,12 @@ enum SettingsCatalog {
             keywords: ["커서", "스페이스", "드래그", "이동", "연속"]
         ),
         SettingsEntry(
+            title: "제스처 미리보기 · 위치",
+            icon: "eye",
+            destination: .gesture,
+            keywords: ["미리보기", "프리뷰", "글자", "보이게", "가려", "오른손", "왼손", "위치", "확인"]
+        ),
+        SettingsEntry(
             title: "단어 추천 · 입력 학습",
             icon: "text.badge.star",
             destination: .inputBehavior,

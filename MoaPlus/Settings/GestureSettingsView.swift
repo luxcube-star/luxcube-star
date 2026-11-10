@@ -215,8 +215,15 @@ struct GestureSettingsView: View {
             // Gesture preview toggle
             Section {
                 Toggle("제스처 미리보기", isOn: $settings.showGesturePreview)
+                if settings.showGesturePreview {
+                    Picker("미리보기 위치", selection: $settings.gesturePreviewPosition) {
+                        ForEach(GesturePreviewPosition.allCases) { position in
+                            Text(position.displayName).tag(position)
+                        }
+                    }
+                }
             } footer: {
-                Text("입력 시 긋기 방향과 예측 모음을 화면에 표시합니다.")
+                Text("긋는 동안 입력될 글자(예: ㅈ 키에서 ↑ → 조)와 긋기 방향을 크게 보여 줍니다. 오른손으로 칠 때는 \"오른손 (왼쪽 위)\"를 고르면 손에 가려지지 않습니다. \"자동\"은 누른 키의 반대편에 띄웁니다(두 손 입력 기준).")
             }
         }
         .navigationTitle("긋기 입력 설정")

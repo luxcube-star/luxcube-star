@@ -1467,6 +1467,23 @@ class KeyboardViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Gesture preview text (완성될 글자)
+
+    /// 긋는 동안 미리보기에 띄울 **완성 글자**. 자음 키면 그 자음 + 모음("조"),
+    /// 모음 키면 조합 중인 초성이 있을 때 초성 + 모음, 없으면 모음만.
+    /// 화면 갱신마다 불리지만 계산은 음절 하나를 만드는 것뿐이라 가볍다.
+    func gesturePreviewText(for vowel: Jungseong?) -> String? {
+        guard let vowel else { return nil }
+        if vowel == .ㆍ { return String(vowel.compatibilityCharacter) }
+        if case .consonant(let consonant)? = activeKeyContent {
+            return String(HangulConstants.composeSyllable(choseong: consonant, jungseong: vowel))
+        }
+        if case .choseong(let consonant) = composer.state {
+            return String(HangulConstants.composeSyllable(choseong: consonant, jungseong: vowel))
+        }
+        return String(vowel.compatibilityCharacter)
+    }
+
     // MARK: - Prediction (학습형 단어 추천)
 
     private func observePredictionSettings() {

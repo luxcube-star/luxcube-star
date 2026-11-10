@@ -17,6 +17,7 @@ final class KeyboardSettings: ObservableObject {
         static let longPressPrimaryMigrated = "longPressPrimaryMigrated"
         static let shortcutExpansions = "shortcutExpansions"
         static let showGesturePreview = "showGesturePreview"
+        static let gesturePreviewPosition = "gesturePreviewPosition"
         static let showSecondaryHints = "showSecondaryHints"
         static let hintSize = "hintSize"
         static let sideKeyWidthRatio = "sideKeyWidthRatio"
@@ -209,8 +210,15 @@ final class KeyboardSettings: ObservableObject {
 
     // MARK: - Display Settings
 
-    @Published var showGesturePreview: Bool = false {
+    /// 긋기 미리보기 (이 수정판은 기본 ON — 원본 모아+는 OFF).
+    @Published var showGesturePreview: Bool = true {
         didSet { guard !isLoading else { return }; writePrimitive(showGesturePreview, forKey: Keys.showGesturePreview) }
+    }
+
+    /// 긋기 미리보기를 띄울 자리. 기본은 오른손 기준(키보드 왼쪽 위) — 원본의 "누른 키 반대편" 규칙은
+    /// 두 엄지 입력을 전제해, 오른손 하나로 왼쪽 키를 누르면 미리보기가 오른손 밑에 깔렸다.
+    @Published var gesturePreviewPosition: GesturePreviewPosition = .topLeft {
+        didSet { guard !isLoading else { return }; writePrimitive(gesturePreviewPosition.rawValue, forKey: Keys.gesturePreviewPosition) }
     }
 
     @Published var showSecondaryHints: Bool = true {
@@ -579,7 +587,9 @@ final class KeyboardSettings: ObservableObject {
         assign(\.abbreviationTriggerPolicy,
                (defaults.object(forKey: Keys.abbreviationTriggerPolicy) as? String)
                    .flatMap(AbbreviationTriggerPolicy.init(rawValue:)) ?? .safe)
-        assign(\.showGesturePreview, defaults.bool(forKey: Keys.showGesturePreview))
+        assign(\.showGesturePreview, defaults.object(forKey: Keys.showGesturePreview) as? Bool ?? true)
+        assign(\.gesturePreviewPosition,
+               (defaults.string(forKey: Keys.gesturePreviewPosition)).flatMap(GesturePreviewPosition.init(rawValue:)) ?? .topLeft)
         assign(\.showSecondaryHints, defaults.object(forKey: Keys.showSecondaryHints) as? Bool ?? true)
         assign(\.hintSize, defaults.object(forKey: Keys.hintSize) as? Int ?? 1)
         assign(\.sideKeyWidthRatio, defaults.object(forKey: Keys.sideKeyWidthRatio) as? Double ?? 0.7)
@@ -743,7 +753,8 @@ final class KeyboardSettings: ObservableObject {
         abbreviationUndoOnBackspaceEnabled = true
         abbreviationKeepConfirmSpaceEnabled = true
         abbreviationTriggerPolicy = .safe
-        showGesturePreview = false
+        showGesturePreview = true
+        gesturePreviewPosition = .topLeft
         showSecondaryHints = true
         hintSize = 1
         autoBracketEnabled = true
