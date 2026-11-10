@@ -44,3 +44,21 @@ private final class PreviewTextDelegate: KeyboardViewModelDelegate {
     func moveCursor(by offset: Int) {}
     func textBeforeCursor() -> String? { text }
 }
+
+/// AltStore 로 설치했을 때 바뀐 App Group ID 를 쓰는지.
+final class AppGroupResolutionTests: XCTestCase {
+    func testDefaultsToBaseId() {
+        XCTAssertEqual(KeyboardSettings.resolvedAppGroupId(infoDictionary: nil), "group.com.moaki.keyboard")
+        XCTAssertEqual(KeyboardSettings.resolvedAppGroupId(infoDictionary: [:]), "group.com.moaki.keyboard")
+    }
+
+    func testUsesAltStoreResignedGroup() {
+        let info: [String: Any] = ["ALTAppGroups": ["group.other.app.ABCDE12345", "group.com.moaki.keyboard.ABCDE12345"]]
+        XCTAssertEqual(KeyboardSettings.resolvedAppGroupId(infoDictionary: info), "group.com.moaki.keyboard.ABCDE12345")
+    }
+
+    func testIgnoresUnrelatedGroups() {
+        let info: [String: Any] = ["ALTAppGroups": ["group.com.moaki.keyboardX"]]
+        XCTAssertEqual(KeyboardSettings.resolvedAppGroupId(infoDictionary: info), "group.com.moaki.keyboard")
+    }
+}

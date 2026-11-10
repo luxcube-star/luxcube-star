@@ -44,7 +44,7 @@ final class BackgroundImageManager {
 
     /// Get the shared container URL for App Group
     private var sharedContainerURL: URL? {
-        fileManager.containerURL(forSecurityApplicationGroupIdentifier: "group.com.moaki.keyboard")
+        fileManager.containerURL(forSecurityApplicationGroupIdentifier: KeyboardSettings.appGroupId)
     }
 
     /// Directory for user-selected background images

@@ -6,8 +6,24 @@ import SwiftUI  // 미리 계산한 키 색상(Color) 캐시용
 final class KeyboardSettings: ObservableObject {
     static let shared = KeyboardSettings()
 
-    /// App Group identifier for shared defaults
-    static let appGroupId = "group.com.moaki.keyboard"
+    /// 원래 App Group ID (entitlements 에 적힌 값).
+    static let baseAppGroupId = "group.com.moaki.keyboard"
+
+    /// 실제로 쓸 App Group ID.
+    ///
+    /// AltStore/AltServer 로 설치하면 App Group 을 사용자 팀 것으로 다시 만든다
+    /// (`group.com.moaki.keyboard.<팀ID>`). 원래 ID 를 그대로 쓰면 앱과 키보드가 각자 다른
+    /// 저장소를 보게 돼 **앱에서 바꾼 설정이 키보드에 전혀 닿지 않는다.** AltServer 는 바꾼 ID 를
+    /// 각 번들의 Info.plist `ALTAppGroups` 에 적어 두므로(AltStore classic
+    /// `ALTDeviceManager+Installation.swift`) 그 값을 우선 쓴다. Xcode 로 직접 설치하면 이 키가 없어
+    /// 원래 ID 를 쓴다.
+    static let appGroupId: String = resolvedAppGroupId(infoDictionary: Bundle.main.infoDictionary)
+
+    static func resolvedAppGroupId(infoDictionary: [String: Any]?) -> String {
+        let groups = infoDictionary?["ALTAppGroups"] as? [String] ?? []
+        return groups.first(where: { $0 == baseAppGroupId || $0.hasPrefix(baseAppGroupId + ".") })
+            ?? baseAppGroupId
+    }
 
     /// UserDefaults keys
     private enum Keys {
