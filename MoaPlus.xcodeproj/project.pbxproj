@@ -660,7 +660,7 @@
 				DEVELOPMENT_TEAM = Z5K743UCS4;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "모아+";
+				INFOPLIST_KEY_CFBundleDisplayName = "모아+ 추천";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -701,7 +701,7 @@
 				DEVELOPMENT_TEAM = Z5K743UCS4;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "모아+";
+				INFOPLIST_KEY_CFBundleDisplayName = "모아+ 추천";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -823,7 +823,7 @@
 				DEVELOPMENT_TEAM = Z5K743UCS4;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = MoaPlusKeyboard/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "모아+";
+				INFOPLIST_KEY_CFBundleDisplayName = "모아+ 추천";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -856,7 +856,7 @@
 				DEVELOPMENT_TEAM = Z5K743UCS4;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = MoaPlusKeyboard/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "모아+";
+				INFOPLIST_KEY_CFBundleDisplayName = "모아+ 추천";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
