@@ -45,8 +45,9 @@
 ## 내 아이폰에 직접 빌드해 설치하기
 
 Mac 의 Xcode 가 필요합니다. 무료 Apple 계정으로 설치한 앱은 7일마다 다시 설치해야 합니다. 유료 Apple Developer
-Program(연 $99)에 가입하면 이 제한이 없고 TestFlight·앱스토어 배포도 할 수 있습니다. 무료 계정에서 App Group
-같은 기능이 그대로 되는지는 Xcode 의 Signing 화면에서 확인하세요 (안 되면 앱 설정이 키보드에 전달되지 않습니다).
+Program(연 $99)에 가입하면 이 제한이 없고 TestFlight·앱스토어 배포도 할 수 있습니다. App Group 은 Apple 의
+[지원 기능 표](https://developer.apple.com/help/account/reference/supported-capabilities-ios)에서 무료 계정(Apple Developer)
+열에도 지원으로 표시돼 있습니다 (2026-11-10 확인).
 
 1. `MoaPlus.xcodeproj` 를 Xcode 로 엽니다.
 2. **MoaPlus**, **MoaPlusKeyboard** 두 타겟 모두 Signing & Capabilities 에서 **Team** 을 내 계정으로 바꿉니다.
