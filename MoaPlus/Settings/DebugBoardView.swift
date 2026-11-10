@@ -84,6 +84,7 @@ final class DebugBoardStore: ObservableObject {
         조기 터치 (마지막 지연 기록): \(s.earlyTouchDelayedDiagnostic ?? "(없음)")
         자동 대문자: \(s.autoCapitalizeDiagnostic ?? "(아직 판정한 적 없음)")
         전체 접근: \(fullAccessLine)
+        App Group: \(KeyboardSettings.appGroupId) / 공유 폴더 \(FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: KeyboardSettings.appGroupId) == nil ? "없음(설정 공유 불가)" : "있음") / AltStore 값 \((Bundle.main.infoDictionary?["ALTAppGroups"] as? [String])?.joined(separator: ",") ?? "없음")
         레이아웃: slotA \(s.layoutCustomization.slotA.rawValue) / slotB \(s.layoutCustomization.slotB.rawValue) / 모음키 \(s.layoutCustomization.vowelKeyBehavior.rawValue)
         """
         let records = entries.isEmpty ? "(저장된 기록 없음)" : exportText
