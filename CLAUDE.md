@@ -748,6 +748,13 @@ v2.2.5 까지 ↗/↘ 를 꺼도 ㅣ/ㅡ 가 들어갔다 — `normalizedDirecti
 - 추천 선택은 조합 상태를 버리고(`commitCurrent` 아님 — 약어 엔진에 흘리지 않기 위해) 화면의 입력 중 단어를 지운 뒤 단어 + 스페이스.
 - 저장은 App Group 파일 우선, 실패하면 익스텐션 로컬. 로컬 파일을 읽지 못하면(기기 보호) 저장을 막아 덮어쓰기를 피한다.
 
+### 멈추면 저절로 띄기 (새모아, 2026-11-11 사용자 결정)
+- 한글을 친 뒤 `KeyboardViewModel.autoSpaceDelay`(1초 고정) 동안 키를 안 누르면 `inputSpace()` 를 그대로 부른다 — 조합 끝내기 · 단축어 · 단어 학습 · 스페이스 두 번 → 마침표가 직접 친 스페이스와 같게 돈다.
+- 예약은 `inputConsonant`/`inputVowel` 뒤, 취소는 키를 누르는 순간(`keyPressFeedback` · `layerSwitchPressFeedback`)과 다른 입력 · 키보드 내려감(`endAutoSpaceSession`).
+- 하지 않는 때: 설정 OFF(`autoSpaceOnPauseEnabled`, 기본 ON) · 한글 모드 아님 · 맨 끝이 한글 아님 · 천지인 ㆍ 조합 중 · 커서 뒤 같은 줄에 글 있음 · `hostAllowsLearning()` false(이메일 · 주소 · 전화 · 비밀번호 · 인증번호).
+- 백스페이스 → `autoSpacePausedByBackspace`. 직접 스페이스 · 엔터 · 추천 고르기로 풀린다.
+- 저절로 띈 바로 뒤 `. , ? !` 는 그 공백을 지우고 붙인다(`inputSymbol`). 바로 뒤 스페이스는 지금처럼 마침표 단축(사용자 결정).
+
 ### 커서 이동 / 약어 리셋 패턴
 ```swift
 func moveCursor(by offset: Int) {

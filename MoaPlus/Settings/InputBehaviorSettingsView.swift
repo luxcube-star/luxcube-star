@@ -44,6 +44,12 @@ struct InputBehaviorSettingsView: View {
             }
 
             Section {
+                Toggle("잠시 멈추면 저절로 띄기", isOn: $settings.autoSpaceOnPauseEnabled)
+            } footer: {
+                Text("한글을 치다가 1초 동안 멈추면 한 칸 띄웁니다. 바로 뒤에 . , ? ! 를 치면 그 칸을 지우고 붙입니다. 백스페이스를 누르면 스페이스·엔터를 직접 치거나 추천 단어를 고를 때까지 쉽니다. 글 가운데와 이메일·주소·전화번호·비밀번호 입력란에서는 띄우지 않습니다.")
+            }
+
+            Section {
                 Toggle("영문 문장 첫 글자 대문자", isOn: $settings.englishAutoCapitalizeEnabled)
                 Toggle("영문 키 길게 눌러 대문자", isOn: $settings.englishLongPressUppercaseEnabled)
             } header: {

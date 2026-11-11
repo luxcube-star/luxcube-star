@@ -11,6 +11,7 @@ final class KeyboardViewModelPredictionTests: XCTestCase {
     private var savedPredictionEnabled: Bool!
     private var savedLearningEnabled: Bool!
     private var savedResetToken: String!
+    private var savedAutoSpaceEnabled: Bool!
 
     override func setUp() {
         super.setUp()
@@ -20,6 +21,8 @@ final class KeyboardViewModelPredictionTests: XCTestCase {
         savedPredictionEnabled = settings.predictionEnabled
         savedLearningEnabled = settings.predictionLearningEnabled
         savedResetToken = settings.predictionResetToken
+        savedAutoSpaceEnabled = settings.autoSpaceOnPauseEnabled
+        settings.autoSpaceOnPauseEnabled = true
         // 약어 확장·마침표 단축키가 끼어들지 않게 끈다.
         settings.shortcutExpansionStore = ShortcutExpansionStore()
         settings.periodOnDoubleSpaceEnabled = false
@@ -40,6 +43,9 @@ final class KeyboardViewModelPredictionTests: XCTestCase {
         settings.predictionEnabled = savedPredictionEnabled
         settings.predictionLearningEnabled = savedLearningEnabled
         settings.predictionResetToken = savedResetToken
+        settings.autoSpaceOnPauseEnabled = savedAutoSpaceEnabled
+        KeyboardViewModel.autoSpaceDelay = 1.0
+        viewModel?.cancelAutoSpace()
         viewModel = nil
         delegate = nil
         engine = nil
@@ -177,10 +183,127 @@ final class KeyboardViewModelPredictionTests: XCTestCase {
         XCTAssertTrue(engine.model.words.isEmpty)
         XCTAssertEqual(engine.model.appliedResetToken, "reset-1")
     }
+
+    // MARK: - 멈추면 저절로 띄기 (2026-11-11)
+
+    private func typeGa() {
+        viewModel.inputConsonant(.ㄱ)
+        viewModel.inputVowel(.ㅏ)
+    }
+
+    private func spinMainQueue(for seconds: TimeInterval) {
+        let done = expectation(description: "main queue")
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { done.fulfill() }
+        wait(for: [done], timeout: seconds + 2)
+    }
+
+    func testAutoSpace_insertsSpaceAfterHangul() {
+        typeGa()
+        XCTAssertEqual(delegate.text, "가")
+        XCTAssertTrue(viewModel.insertAutoSpaceIfAppropriate())
+        XCTAssertEqual(delegate.text, "가 ")
+        XCTAssertTrue(viewModel.autoSpaceJustInserted)
+    }
+
+    func testAutoSpace_timerFiresAfterPause() {
+        KeyboardViewModel.autoSpaceDelay = 0.05
+        typeGa()
+        spinMainQueue(for: 0.3)
+        XCTAssertEqual(delegate.text, "가 ")
+    }
+
+    func testAutoSpace_keyPressCancelsWaiting() {
+        KeyboardViewModel.autoSpaceDelay = 0.05
+        typeGa()
+        viewModel.keyPressFeedback()
+        spinMainQueue(for: 0.3)
+        XCTAssertEqual(delegate.text, "가", "키를 누르는 순간 기다리던 띄기를 멈춘다")
+    }
+
+    func testAutoSpace_pausedAfterBackspace_untilUserSpace() {
+        typeGa()
+        viewModel.deleteBackward()
+        viewModel.inputConsonant(.ㄱ)
+        viewModel.inputVowel(.ㅏ)
+        XCTAssertFalse(viewModel.insertAutoSpaceIfAppropriate(), "백스페이스 뒤에는 고치는 동안 띄지 않는다")
+        viewModel.inputSpace()
+        viewModel.inputConsonant(.ㄴ)
+        viewModel.inputVowel(.ㅏ)
+        XCTAssertTrue(viewModel.insertAutoSpaceIfAppropriate(), "직접 스페이스로 다음 단어로 넘어가면 다시 켠다")
+    }
+
+    func testAutoSpace_acceptPredictionResumes() {
+        typeGa()
+        viewModel.deleteBackward()
+        viewModel.acceptPrediction("가나")
+        viewModel.inputConsonant(.ㄷ)
+        viewModel.inputVowel(.ㅏ)
+        XCTAssertTrue(viewModel.insertAutoSpaceIfAppropriate())
+    }
+
+    func testAutoSpace_punctuationRightAfterAttaches() {
+        typeGa()
+        viewModel.insertAutoSpaceIfAppropriate()
+        viewModel.inputSymbol(".")
+        XCTAssertEqual(delegate.text, "가.")
+    }
+
+    func testAutoSpace_punctuationAfterUserSpaceStaysSpaced() {
+        typeGa()
+        viewModel.inputSpace()
+        viewModel.inputSymbol(".")
+        XCTAssertEqual(delegate.text, "가 .", "직접 친 공백은 지우지 않는다")
+    }
+
+    func testAutoSpace_thenSpace_givesPeriodWhenShortcutOn() {
+        KeyboardSettings.shared.periodOnDoubleSpaceEnabled = true
+        typeGa()
+        viewModel.insertAutoSpaceIfAppropriate()
+        viewModel.inputSpace()
+        XCTAssertEqual(delegate.text, "가. ")
+    }
+
+    func testAutoSpace_skipsBlockedField() {
+        delegate.allowsLearning = false
+        typeGa()
+        XCTAssertFalse(viewModel.insertAutoSpaceIfAppropriate())
+        XCTAssertEqual(delegate.text, "가")
+    }
+
+    func testAutoSpace_skipsInsideText() {
+        delegate.after = "뒤"
+        typeGa()
+        XCTAssertFalse(viewModel.insertAutoSpaceIfAppropriate(), "글 가운데에서는 띄지 않는다")
+        delegate.after = "\n다음 줄"
+        XCTAssertTrue(viewModel.insertAutoSpaceIfAppropriate(), "줄 끝이면 띄운다")
+    }
+
+    func testAutoSpace_skipsEnglishAndNonHangul() {
+        delegate.text = "abc"
+        XCTAssertFalse(viewModel.insertAutoSpaceIfAppropriate(), "맨 끝이 한글이 아니면 띄지 않는다")
+        viewModel.keyboardMode = .english
+        delegate.text = "가"
+        XCTAssertFalse(viewModel.insertAutoSpaceIfAppropriate(), "영문 모드에서는 띄지 않는다")
+    }
+
+    func testAutoSpace_settingOff() {
+        KeyboardSettings.shared.autoSpaceOnPauseEnabled = false
+        typeGa()
+        XCTAssertFalse(viewModel.insertAutoSpaceIfAppropriate())
+    }
+
+    func testAutoSpace_endSessionClearsBackspacePause() {
+        typeGa()
+        viewModel.deleteBackward()
+        viewModel.endAutoSpaceSession()
+        typeGa()
+        XCTAssertTrue(viewModel.insertAutoSpaceIfAppropriate())
+    }
 }
 
 private final class PredictionTextDelegate: KeyboardViewModelDelegate {
     var text: String = ""
+    var after: String?
     var allowsLearning = true
 
     func insertText(_ string: String) { text.append(string) }
@@ -198,5 +321,6 @@ private final class PredictionTextDelegate: KeyboardViewModelDelegate {
     func triggerHapticFeedback() {}
     func moveCursor(by offset: Int) {}
     func textBeforeCursor() -> String? { text }
+    func textAfterCursor() -> String? { after }
     func hostAllowsLearning() -> Bool { allowsLearning }
 }

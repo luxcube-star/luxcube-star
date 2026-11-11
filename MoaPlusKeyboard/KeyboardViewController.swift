@@ -159,6 +159,8 @@ class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedback {
         EarlyTouchDiagnostics.flush(force: true)
         // 미뤄 둔 학습 데이터 저장을 키보드가 내려가기 전에 끝낸다.
         viewModel.flushPredictionSave()
+        // 멈추면 저절로 띄기: 내려간 키보드가 1초 뒤에 공백을 넣지 않게 취소한다.
+        viewModel.endAutoSpaceSession()
         // The keyboard can be torn down mid-press — e.g. the host app presents
         // a photo picker while the finger is still holding backspace. The
         // repeat timer is driven by a Timer, not by touch events, so nothing

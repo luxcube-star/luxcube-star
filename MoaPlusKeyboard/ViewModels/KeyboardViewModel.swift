@@ -573,15 +573,19 @@ class KeyboardViewModel: ObservableObject {
     // MARK: - Input Methods
 
     func inputConsonant(_ consonant: Choseong) {
+        autoSpaceJustInserted = false
         freezeComposerIfCaretMoved()
         let action = composer.inputChoseong(consonant)
         handleComposerAction(action)
+        scheduleAutoSpace()
     }
 
     func inputVowel(_ vowel: Jungseong) {
+        autoSpaceJustInserted = false
         freezeComposerIfCaretMoved()
         let action = composer.inputJungseong(vowel)
         handleComposerAction(action)
+        scheduleAutoSpace()
     }
 
     /// Backstop for a stale composing glyph after the user moved the caret by
@@ -786,10 +790,17 @@ class KeyboardViewModel: ObservableObject {
 
     func inputSymbol(_ symbol: String, bypassAutoBracket: Bool = false) {
         typoMarkPending = false
+        cancelAutoSpace()
         if previewMode { return }
         pendingPredictionLearn = true
         let resolved = shiftedSymbolIfNeeded(symbol)
         commitCurrent()
+        // 저절로 띈 바로 뒤의 문장부호는 그 공백을 지우고 붙인다 ("감사합니다 " + "." → "감사합니다.").
+        if autoSpaceJustInserted, Self.punctuationAttachingToWord.contains(resolved),
+           delegate?.textBeforeCursor()?.hasSuffix(" ") == true {
+            delegate?.deleteBackward()
+        }
+        autoSpaceJustInserted = false
         if !bypassAutoBracket && insertWithAutoBracket(resolved) {
             // Bracket pair inserted with cursor positioned
         } else {
@@ -803,6 +814,8 @@ class KeyboardViewModel: ObservableObject {
 
     func inputNumber(_ number: String) {
         typoMarkPending = false
+        cancelAutoSpace()
+        autoSpaceJustInserted = false
         if previewMode { return }
         commitCurrent()
         if insertWithAutoBracket(number) {
@@ -936,6 +949,10 @@ class KeyboardViewModel: ObservableObject {
     }
 
     func deleteBackward() {
+        cancelAutoSpace()
+        autoSpaceJustInserted = false
+        // 백스페이스 뒤에는 직접 스페이스·엔터를 치거나 추천을 골라 다음 단어로 넘어갈 때까지 저절로 띄지 않는다.
+        autoSpacePausedByBackspace = true
         if previewMode { return }
         if typoMarkPending {
             typoMarkPending = false
@@ -962,6 +979,9 @@ class KeyboardViewModel: ObservableObject {
 
     func inputSpace() {
         typoMarkPending = false
+        cancelAutoSpace()
+        autoSpaceJustInserted = false
+        autoSpacePausedByBackspace = false
         if previewMode { return }
         pendingPredictionLearn = true
         // Commit composing text first (feeds abbreviation engine via commitCurrent)
@@ -1006,6 +1026,9 @@ class KeyboardViewModel: ObservableObject {
 
     func inputReturn() {
         typoMarkPending = false
+        cancelAutoSpace()
+        autoSpaceJustInserted = false
+        autoSpacePausedByBackspace = false
         if previewMode { return }
         pendingPredictionLearn = true
         commitCurrent()
@@ -1599,6 +1622,9 @@ class KeyboardViewModel: ObservableObject {
 
     /// 추천 단어를 골랐다: 입력 중인 단어를 지우고 고른 단어 + 스페이스를 넣는다.
     func acceptPrediction(_ word: String) {
+        cancelAutoSpace()
+        autoSpaceJustInserted = false
+        autoSpacePausedByBackspace = false
         guard !previewMode else { return }
         let before = delegate?.textBeforeCursor() ?? ""
         let current = PredictionEngine.currentContext(in: before).current
@@ -1665,6 +1691,75 @@ class KeyboardViewModel: ObservableObject {
         predictionStatsDirty = false
         PredictionStore.save(predictionEngine.model)
         KeyboardSettings.shared.recordPredictionDiagnostic(predictionEngine.diagnosticLine)
+    }
+
+    // MARK: - 멈추면 저절로 띄기 (새모아, 2026-11-11)
+    //
+    // 한글을 친 뒤 `autoSpaceDelay` 동안 아무 키도 안 누르면 스페이스를 친 것과 똑같이 처리한다
+    // (`inputSpace` — 조합 끝내기 · 단축어 · 단어 학습 · 스페이스 두 번 → 마침표 모두 그대로).
+    // - 한글 모드 · 맨 끝 글자가 한글일 때만. 글 가운데(커서 뒤에 같은 줄 글이 있음)에서는 하지 않는다.
+    // - 단어 학습을 막는 입력란(이메일 · 주소 · 전화 · 비밀번호 · 인증번호 등)에서는 하지 않는다.
+    // - 백스페이스를 누르면 멈추고, 직접 스페이스 · 엔터 · 추천 고르기로 다음 단어로 넘어가면 다시 켠다.
+    // - 저절로 띈 바로 뒤의 . , ? ! 는 그 공백을 지우고 붙인다(`inputSymbol`).
+    // - 저절로 띈 바로 뒤의 스페이스는 지금처럼 "스페이스 두 번 → 마침표" 가 된다(사용자 결정).
+
+    /// 기다리는 시간(초). 사용자 결정 1초 고정. 테스트만 바꾼다.
+    static var autoSpaceDelay: TimeInterval = 1.0
+    /// 저절로 띈 공백 뒤에 붙이는 문장부호.
+    static let punctuationAttachingToWord: Set<String> = [".", ",", "?", "!"]
+
+    private var autoSpaceWorkItem: DispatchWorkItem?
+    /// 백스페이스 뒤 — 다음 단어로 넘어갈 때까지 저절로 띄지 않는다.
+    private(set) var autoSpacePausedByBackspace = false
+    /// 방금 넣은 공백이 저절로 띈 것인지 (바로 뒤 문장부호를 붙이는 데 쓴다).
+    private(set) var autoSpaceJustInserted = false
+
+    private func scheduleAutoSpace() {
+        cancelAutoSpace()
+        guard !previewMode, keyboardMode == .korean, !autoSpacePausedByBackspace,
+              KeyboardSettings.shared.autoSpaceOnPauseEnabled else { return }
+        let work = DispatchWorkItem { [weak self] in
+            self?.autoSpaceWorkItem = nil
+            self?.insertAutoSpaceIfAppropriate()
+        }
+        autoSpaceWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.autoSpaceDelay, execute: work)
+    }
+
+    /// 기다리던 저절로 띄기를 취소한다. 키보드가 내려갈 때도 부른다.
+    func cancelAutoSpace() {
+        autoSpaceWorkItem?.cancel()
+        autoSpaceWorkItem = nil
+    }
+
+    /// 키보드가 내려갈 때: 기다리던 것을 취소하고, 백스페이스로 멈춘 상태도 푼다(다음에 열면 새로 시작).
+    func endAutoSpaceSession() {
+        cancelAutoSpace()
+        autoSpacePausedByBackspace = false
+        autoSpaceJustInserted = false
+    }
+
+    /// 시간이 다 됐다: 조건이 맞으면 스페이스를 친 것처럼 띄운다. 띄웠으면 `true`.
+    @discardableResult
+    func insertAutoSpaceIfAppropriate() -> Bool {
+        guard !previewMode, keyboardMode == .korean, !autoSpacePausedByBackspace,
+              KeyboardSettings.shared.autoSpaceOnPauseEnabled,
+              delegate?.hostAllowsLearning() ?? false else { return false }
+        // 천지인 조합 중 표시("ㅇㆍㆍ")는 아직 끝난 글자가 아니다.
+        guard !composer.composingDisplay.contains("ㆍ") else { return false }
+        guard let last = delegate?.textBeforeCursor()?.last, Self.isHangul(last) else { return false }
+        if let after = delegate?.textAfterCursor(), let next = after.first, !next.isNewline { return false }
+        inputSpace()
+        autoSpaceJustInserted = true
+        schedulePredictionRefresh()
+        return true
+    }
+
+    /// 한글 음절 또는 호환 자모(천지인 ㆍ 제외).
+    private static func isHangul(_ character: Character) -> Bool {
+        guard character != "ㆍ", let scalar = character.unicodeScalars.first,
+              character.unicodeScalars.count == 1 else { return false }
+        return (0xAC00...0xD7A3).contains(scalar.value) || (0x3131...0x318E).contains(scalar.value)
     }
 
     // MARK: - Public State Reset (for external text field changes)
@@ -1942,6 +2037,8 @@ class KeyboardViewModel: ObservableObject {
     /// 백스페이스는 예외적으로 `deleteBackward()` 안에 남겨 뒀다 — 누른 즉시 한 번
     /// 지우고 자동 반복으로 이어지는 구조라, 반복 틱마다 울려야 하기 때문이다.
     func keyPressFeedback() {
+        // 키를 누르는 순간 기다리던 저절로 띄기를 멈춘다 (누른 채 긋거나 끄는 동안 띄지 않게).
+        cancelAutoSpace()
         if previewMode { return }
         triggerHapticFeedback()
     }
@@ -1951,6 +2048,7 @@ class KeyboardViewModel: ObservableObject {
     /// 없음). 기능행 키가 환경 값 `layerSwitchPressFeedback` 으로 부른다 — `keyPressFeedback()` 과
     /// 같은 자리(누름 시점, 키 하나에 한 번)이고, 입력 메서드(`toggleLetterMode` 등)는 울리지 않는다.
     func layerSwitchPressFeedback() {
+        cancelAutoSpace()
         if previewMode { return }
         delegate?.triggerLayerSwitchFeedback()
     }

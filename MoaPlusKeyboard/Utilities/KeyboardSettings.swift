@@ -66,6 +66,7 @@ final class KeyboardSettings: ObservableObject {
         static let cursorMoveBySpaceDragEnabled = "cursorMoveBySpaceDragEnabled"
         static let cursorRepeatSpeed = "cursorRepeatSpeed"
         static let periodOnDoubleSpace = "periodOnDoubleSpace"
+        static let autoSpaceOnPause = "autoSpaceOnPause"
         static let predictionEnabled = "predictionEnabled"
         static let predictionLearningEnabled = "predictionLearningEnabled"
         static let predictionResetToken = "predictionResetToken"
@@ -391,6 +392,12 @@ final class KeyboardSettings: ObservableObject {
         didSet { guard !isLoading else { return }; writePrimitive(periodOnDoubleSpaceEnabled, forKey: Keys.periodOnDoubleSpace) }
     }
 
+    /// 멈추면 저절로 띄기 (새모아, 사용자 결정 2026-11-11, 기본 ON): 한글을 친 뒤 1초 동안
+    /// 아무 키도 안 누르면 스페이스를 친 것처럼 한 칸 띄운다.
+    @Published var autoSpaceOnPauseEnabled: Bool = true {
+        didSet { guard !isLoading else { return }; writePrimitive(autoSpaceOnPauseEnabled, forKey: Keys.autoSpaceOnPause) }
+    }
+
     /// 학습한 단어 추천 바 표시 (기본 ON). 끄면 바가 사라지고 키보드 높이도 원래대로 돌아간다.
     @Published var predictionEnabled: Bool = true {
         didSet { guard !isLoading else { return }; writePrimitive(predictionEnabled, forKey: Keys.predictionEnabled) }
@@ -633,6 +640,7 @@ final class KeyboardSettings: ObservableObject {
         assign(\.cursorMoveBySpaceDragEnabled, defaults.object(forKey: Keys.cursorMoveBySpaceDragEnabled) as? Bool ?? true)
         assign(\.cursorRepeatSpeed, defaults.object(forKey: Keys.cursorRepeatSpeed) as? Int ?? 1)
         assign(\.periodOnDoubleSpaceEnabled, defaults.object(forKey: Keys.periodOnDoubleSpace) as? Bool ?? true)
+        assign(\.autoSpaceOnPauseEnabled, defaults.object(forKey: Keys.autoSpaceOnPause) as? Bool ?? true)
         assign(\.predictionEnabled, defaults.object(forKey: Keys.predictionEnabled) as? Bool ?? true)
         assign(\.predictionLearningEnabled, defaults.object(forKey: Keys.predictionLearningEnabled) as? Bool ?? true)
         assign(\.predictionResetToken, defaults.string(forKey: Keys.predictionResetToken) ?? "")
@@ -806,6 +814,7 @@ final class KeyboardSettings: ObservableObject {
         cursorMoveBySpaceDragEnabled = true
         cursorRepeatSpeed = 1
         periodOnDoubleSpaceEnabled = true
+        autoSpaceOnPauseEnabled = true
         predictionEnabled = true
         predictionLearningEnabled = true
         englishAutoCapitalizeEnabled = false
