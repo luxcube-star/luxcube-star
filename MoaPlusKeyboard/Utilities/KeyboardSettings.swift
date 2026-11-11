@@ -44,6 +44,7 @@ final class KeyboardSettings: ObservableObject {
         static let earlyTouchDiagnostic = "earlyTouchDiagnostic"
         static let earlyTouchDelayedDiagnostic = "earlyTouchDelayedDiagnostic"
         static let autoCapitalizeDiagnostic = "autoCapitalizeDiagnostic"
+        static let predictionDiagnostic = "predictionDiagnostic"
         static let fullAccessDiagnostic = "fullAccessDiagnostic"
         static let keyboardMeasuredBottomInset = "keyboardMeasuredBottomInset"
         static let showGlobeKey = "showGlobeKey"
@@ -725,6 +726,17 @@ final class KeyboardSettings: ObservableObject {
 
     var autoCapitalizeDiagnostic: String? {
         defaults.string(forKey: Keys.autoCapitalizeDiagnostic)
+    }
+
+    /// 단어 추천의 효과 측정 숫자 (`PredictionEngine.diagnosticLine`). 키보드가 학습 데이터를 저장할 때
+    /// 함께 적고 메인 앱의 개발자 리포트가 읽는다. 단어는 담지 않는다. 지오메트리 진단과 같은 이유로
+    /// `@Published` 밖에 둔다.
+    func recordPredictionDiagnostic(_ text: String) {
+        defaults.set(text, forKey: Keys.predictionDiagnostic)
+    }
+
+    var predictionDiagnostic: String? {
+        defaults.string(forKey: Keys.predictionDiagnostic)
     }
 
     /// 익스텐션이 마지막으로 실측한 하단 안전영역(pt). 아직 키보드를 한 번도

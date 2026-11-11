@@ -154,6 +154,7 @@ CI 는 유닛 → UI 순서로 분리해 이 문제를 피한다. 로컬에서 �
 임시 테스트는 커밋하지 않고, 끝나면 시뮬레이터를 erase. 실기기 고유값(안전영역·호스트별 신호)은 여전히 실기기 리포트로
 
 CI: `.github/workflows/ci.yml`이 main 브랜치 push/PR/수동 트리거 시 GitHub Hosted Runner(`macos-15`)에서 위 명령을 자동 실행한다. 시뮬레이터는 iPhone 17 Pro → 17 → 16 Pro → 16 순서로 폴백 선택한다.
+CI(모아+ 추천): `.github/workflows/build-ipa.yml` 이 `claude/**` 브랜치 push 마다 `macos-15` 러너에서 ① 서명 없이 archive → ad-hoc 서명으로 App Group entitlements 주입·검사 → IPA 아티팩트 `MoaPlusRecommend-ipa`(30일 보관) ② 유닛 테스트(결과 7일 보관)를 돌린다. AltServer 설치용 — 맥미니에 Xcode 가 없어 빌드는 이것으로만 한다.
 
 ## 주의사항
 
@@ -719,8 +720,20 @@ v2.2.5 까지 ↗/↘ 를 꺼도 ㅣ/ㅡ 가 들어갔다 — `normalizedDirecti
   `KeyboardView` 그리드 배분과 `KeyboardViewController` 높이 보정이 둘 다 이 플래그를 본다 — 따로 보면 기능행이 잘린다.
 - 추천 갱신은 컨트롤러의 프록시 변경(insert/delete/updateComposingText/moveCursor)마다
   `schedulePredictionRefresh()` 로 **다음 런루프 틱**에 한 번 돈다 (자동 대문자와 같은 이유: 문맥 반영 지연).
-- 학습은 스페이스·엔터·기호 입력이 `pendingPredictionLearn` 을 세우고, 다음 갱신이 문맥에서 끝난 단어를 읽어 학습한다.
+- 학습은 스페이스·엔터·기호 입력이 `pendingPredictionLearn` 을 세우고, 다음 갱신이 문맥에서 끝난 단어를 읽는다.
   `completedWord` 서명으로 "안녕 " → "안녕. " 같은 중복 학습을 막는다.
+- **끝난 단어는 바로 배우지 않고 보류한다** (`heldPrediction`, 2026-11-11). 다음 글자를 치거나(문맥이 그 서명으로 끝나지
+  않게 되면) 키보드를 닫으면(`flushPredictionSave`) 배우고, 그 전에 백스페이스를 누르면(`deleteBackward` →
+  `discardHeldPredictionIfJustCompleted`) 오타로 보고 버린다. 다음 단어를 고치는 백스페이스는 앞 단어와 상관없다
+  (`KeyboardViewModelPredictionTests`). 서명 비교를 백스페이스 **전에** 해야 한다 — 지운 뒤에는 문맥이 달라진다.
+- **두 번 쓴 단어만 추천한다** (`minUsesToSuggest = 2`, 단어 완성·다음 단어 공통). 쓴 횟수 `count` 는 줄지 않는다.
+- **순위 점수는 감쇠한다** (`score`, 반감기 `halfLife = 3000` 단어 — 시계가 아니라 배운 단어 수 `tick`).
+  쓸 때 `decayedScore + 1`. 정리(5,000개 초과)도 감쇠 점수로. 반감기 값은 사용자 결정(2026-11-11).
+- 낱자모가 든 단어("안ㄴ", "ㅇㅋ", "ㅋㅋ")는 배우지 않는다(사용자 결정). 같은 글자가 이어진 완성 글자("아아아")는 배운다.
+- 저장 형식 판 2: `PredictionWordEntry.score`, `PredictionModel.stats` 추가. 모든 키를 `decodeIfPresent` 로 읽어 판 1 파일을
+  이어받는다(점수 = 쓴 횟수). 엔진 `init` 이 지금 규칙으로 배우지 않을 단어를 비우고 판을 2로 올린다.
+- 효과 측정: `PredictionStats`(보여 줌·고름·아낀 글자) → 저장할 때 `KeyboardSettings.recordPredictionDiagnostic` →
+  개발자 리포트 "단어 추천" 줄. 단어는 담지 않는다.
 - 추천 선택은 조합 상태를 버리고(`commitCurrent` 아님 — 약어 엔진에 흘리지 않기 위해) 화면의 입력 중 단어를 지운 뒤 단어 + 스페이스.
 - 저장은 App Group 파일 우선, 실패하면 익스텐션 로컬. 로컬 파일을 읽지 못하면(기기 보호) 저장을 막아 덮어쓰기를 피한다.
 

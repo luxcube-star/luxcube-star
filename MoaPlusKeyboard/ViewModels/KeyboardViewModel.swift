@@ -266,8 +266,13 @@ class KeyboardViewModel: ObservableObject {
     private var predictionStoreWritable = true
     /// 스페이스·엔터·문장부호를 쳐서 단어 하나가 끝났을 수 있음. 다음 갱신에서 학습한다.
     private var pendingPredictionLearn = false
-    /// 마지막으로 학습한 문맥. 같은 단어를 두 번 세지 않는 데 쓴다.
+    /// 마지막으로 학습(보류)한 문맥. 같은 단어를 두 번 세지 않는 데 쓴다.
     private var lastLearnedSignature: String?
+    /// 끝났지만 아직 배우지 않은 단어. 바로 백스페이스로 지우면 오타로 보고 버리고,
+    /// 다음 글자를 치거나 키보드를 닫으면 그때 배운다 (`commitHeldPrediction`).
+    private var heldPrediction: (word: String, previous: String?, signature: String)?
+    /// 효과 측정 숫자가 바뀌었는데 아직 저장하지 않음. 키보드를 닫을 때 저장한다.
+    private var predictionStatsDirty = false
     private var predictionRefreshScheduled = false
     private var predictionSaveWorkItem: DispatchWorkItem?
     private var predictionSettingsCancellables = Set<AnyCancellable>()
@@ -936,6 +941,7 @@ class KeyboardViewModel: ObservableObject {
             typoMarkPending = false
             GestureDebugLog.markLastLineDeleted()
         }
+        discardHeldPredictionIfJustCompleted()
         // A caret tap can leave the composer pointed at the old glyph; freeze it
         // first so backspace acts at the current caret, not on stale state.
         freezeComposerIfCaretMoved()
@@ -1512,7 +1518,12 @@ class KeyboardViewModel: ObservableObject {
     }
 
     private func setPredictionSuggestions(_ suggestions: [String]) {
-        if predictionSuggestions != suggestions { predictionSuggestions = suggestions }
+        guard predictionSuggestions != suggestions else { return }
+        if !suggestions.isEmpty {
+            predictionEngine.recordShown()
+            predictionStatsDirty = true
+        }
+        predictionSuggestions = suggestions
     }
 
     /// 다음 런루프 틱에 추천을 다시 계산한다. 한 키에 삽입·삭제가 여러 번 일어나도 한 번만 돈다.
@@ -1534,6 +1545,12 @@ class KeyboardViewModel: ObservableObject {
         let settings = KeyboardSettings.shared
         let before = delegate?.textBeforeCursor() ?? ""
 
+        // 보류한 단어 뒤에 다른 글자를 쳤다(또는 문맥이 바뀌었다) — 이제 오타로 지울 일이 없으니 배운다.
+        if let held = heldPrediction,
+           PredictionEngine.completedWord(in: before)?.signature != held.signature {
+            commitHeldPrediction()
+        }
+
         if pendingPredictionLearn {
             pendingPredictionLearn = false
             if settings.predictionLearningEnabled, delegate?.hostAllowsLearning() ?? true {
@@ -1551,14 +1568,33 @@ class KeyboardViewModel: ObservableObject {
             predictionEngine.suggestions(prefix: context.current, previous: context.previous))
     }
 
+    /// 방금 끝난 단어를 바로 배우지 않고 보류한다. 앞에 보류한 단어가 있으면 그것을 먼저 배운다.
     private func learnCompletedWord(in before: String) {
         guard let completed = PredictionEngine.completedWord(in: before),
               completed.signature != lastLearnedSignature else { return }
+        commitHeldPrediction()
         lastLearnedSignature = completed.signature
+        heldPrediction = completed
+    }
+
+    /// 보류한 단어를 배운다.
+    private func commitHeldPrediction() {
+        guard let held = heldPrediction else { return }
+        heldPrediction = nil
         applyPredictionResetIfNeeded(token: KeyboardSettings.shared.predictionResetToken)
-        if predictionEngine.learn(word: completed.word, previous: completed.previous) {
+        if predictionEngine.learn(word: held.word, previous: held.previous) {
             schedulePredictionSave()
         }
+    }
+
+    /// 단어를 끝내자마자(뒤에 다른 글자를 치기 전에) 백스페이스를 눌렀으면 그 단어를 배우지 않는다.
+    /// 지운 뒤 같은 단어를 다시 끝내면 다시 보류하도록 서명도 지운다.
+    private func discardHeldPredictionIfJustCompleted() {
+        guard let held = heldPrediction else { return }
+        let before = delegate?.textBeforeCursor() ?? ""
+        guard PredictionEngine.completedWord(in: before)?.signature == held.signature else { return }
+        heldPrediction = nil
+        lastLearnedSignature = nil
     }
 
     /// 추천 단어를 골랐다: 입력 중인 단어를 지우고 고른 단어 + 스페이스를 넣는다.
@@ -1576,6 +1612,8 @@ class KeyboardViewModel: ObservableObject {
             delegate?.deleteBackward()
         }
         delegate?.insertText(PredictionEngine.matchingCase(of: word, to: current) + " ")
+        predictionEngine.recordAccepted(word: word, typed: current)
+        predictionStatsDirty = true
         pendingPredictionLearn = true
         triggerHapticFeedback()
         scheduleAutoCapitalizationRefresh()
@@ -1596,6 +1634,7 @@ class KeyboardViewModel: ObservableObject {
         guard !token.isEmpty, token != predictionEngine.model.appliedResetToken else { return }
         predictionEngine.reset(appliedResetToken: token)
         lastLearnedSignature = nil
+        heldPrediction = nil
         setPredictionSuggestions([])
         schedulePredictionSave()
     }
@@ -1605,20 +1644,27 @@ class KeyboardViewModel: ObservableObject {
         guard predictionStoreWritable else { return }
         predictionSaveWorkItem?.cancel()
         let work = DispatchWorkItem { [weak self] in
-            guard let self else { return }
-            PredictionStore.save(self.predictionEngine.model)
+            self?.savePredictionNow()
         }
         predictionSaveWorkItem = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: work)
     }
 
-    /// 키보드가 닫힐 때 미뤄 둔 저장을 바로 실행한다.
+    /// 키보드가 닫힐 때: 보류한 단어를 배우고, 미뤄 둔 저장(또는 효과 측정 숫자)을 바로 저장한다.
     func flushPredictionSave() {
-        guard let work = predictionSaveWorkItem else { return }
+        commitHeldPrediction()
+        let pending = predictionSaveWorkItem != nil
+        predictionSaveWorkItem?.cancel()
         predictionSaveWorkItem = nil
-        work.cancel()
-        guard predictionStoreWritable else { return }
+        guard pending || predictionStatsDirty, predictionStoreWritable else { return }
+        savePredictionNow()
+    }
+
+    private func savePredictionNow() {
+        predictionSaveWorkItem = nil
+        predictionStatsDirty = false
         PredictionStore.save(predictionEngine.model)
+        KeyboardSettings.shared.recordPredictionDiagnostic(predictionEngine.diagnosticLine)
     }
 
     // MARK: - Public State Reset (for external text field changes)

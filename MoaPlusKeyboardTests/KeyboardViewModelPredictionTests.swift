@@ -46,15 +46,66 @@ final class KeyboardViewModelPredictionTests: XCTestCase {
         super.tearDown()
     }
 
-    func testSpaceLearnsWord_thenPrefixSuggestsIt() {
+    func testSpaceHoldsWord_nextLetterLearnsIt_secondUseSuggestsIt() {
         delegate.text = "감정평가서"
         viewModel.inputSpace()
         viewModel.refreshPredictions()
-        XCTAssertEqual(engine.model.words["감정평가서"]?.count, 1)
+        XCTAssertNil(engine.model.words["감정평가서"], "끝내자마자 배우지 않고 보류한다 (바로 지우면 오타)")
 
-        delegate.text = "감정평가서 감정"
+        delegate.text = "감정평가서 감"
         viewModel.refreshPredictions()
+        XCTAssertEqual(engine.model.words["감정평가서"]?.count, 1, "다음 글자를 치면 배운다")
+        XCTAssertEqual(viewModel.predictionSuggestions, [], "한 번 쓴 단어는 아직 추천하지 않는다")
+
+        delegate.text = "감정평가서 감정평가서"
+        viewModel.inputSpace()
+        viewModel.refreshPredictions()
+        delegate.text += "감정"
+        viewModel.refreshPredictions()
+        XCTAssertEqual(engine.model.words["감정평가서"]?.count, 2)
         XCTAssertEqual(viewModel.predictionSuggestions, ["감정평가서"])
+        XCTAssertEqual(engine.model.stats.shown, 1)
+    }
+
+    func testBackspaceRightAfterWord_doesNotLearnIt() {
+        delegate.text = "안녕하세오"
+        viewModel.inputSpace()
+        viewModel.refreshPredictions()
+        viewModel.deleteBackward()
+        XCTAssertEqual(delegate.text, "안녕하세오")
+        viewModel.flushPredictionSave()
+        XCTAssertTrue(engine.model.words.isEmpty, "끝내자마자 지운 단어는 오타로 보고 배우지 않는다")
+    }
+
+    func testBackspaceThenRetypedWord_learnsCorrectedWord() {
+        delegate.text = "안녕하세오"
+        viewModel.inputSpace()
+        viewModel.refreshPredictions()
+        viewModel.deleteBackward()
+        delegate.text = "안녕하세요"
+        viewModel.inputSpace()
+        viewModel.refreshPredictions()
+        viewModel.flushPredictionSave()
+        XCTAssertNil(engine.model.words["안녕하세오"])
+        XCTAssertEqual(engine.model.words["안녕하세요"]?.count, 1)
+    }
+
+    func testBackspaceInsideNextWord_keepsPreviousWord() {
+        delegate.text = "안녕"
+        viewModel.inputSpace()
+        viewModel.refreshPredictions()
+        delegate.text = "안녕 하"
+        viewModel.refreshPredictions()
+        viewModel.deleteBackward()
+        XCTAssertEqual(engine.model.words["안녕"]?.count, 1, "다음 단어를 고치는 백스페이스는 앞 단어와 상관없다")
+    }
+
+    func testCloseKeyboard_learnsHeldWord() {
+        delegate.text = "안녕"
+        viewModel.inputSpace()
+        viewModel.refreshPredictions()
+        viewModel.flushPredictionSave()
+        XCTAssertEqual(engine.model.words["안녕"]?.count, 1)
     }
 
     func testSecondSpaceDoesNotLearnSameWordTwice() {
@@ -63,6 +114,7 @@ final class KeyboardViewModelPredictionTests: XCTestCase {
         viewModel.refreshPredictions()
         viewModel.inputSpace()
         viewModel.refreshPredictions()
+        viewModel.flushPredictionSave()
         XCTAssertEqual(engine.model.words["안녕"]?.count, 1)
     }
 
@@ -71,6 +123,7 @@ final class KeyboardViewModelPredictionTests: XCTestCase {
         delegate.text = "안녕"
         viewModel.inputSpace()
         viewModel.refreshPredictions()
+        viewModel.flushPredictionSave()
         XCTAssertTrue(engine.model.words.isEmpty)
     }
 
@@ -79,6 +132,7 @@ final class KeyboardViewModelPredictionTests: XCTestCase {
         delegate.text = "secretword"
         viewModel.inputSpace()
         viewModel.refreshPredictions()
+        viewModel.flushPredictionSave()
         XCTAssertTrue(engine.model.words.isEmpty)
     }
 
@@ -87,6 +141,8 @@ final class KeyboardViewModelPredictionTests: XCTestCase {
         delegate.text = "네 안녀"
         viewModel.acceptPrediction("안녕하세요")
         XCTAssertEqual(delegate.text, "네 안녕하세요 ")
+        XCTAssertEqual(engine.model.stats.accepted, 1)
+        XCTAssertEqual(engine.model.stats.savedCharacters, 3, "다섯 글자 중 두 글자는 이미 쳤다")
     }
 
     func testAcceptPrediction_afterSpaceAppendsNextWord() {

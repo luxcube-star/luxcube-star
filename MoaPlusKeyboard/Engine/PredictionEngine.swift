@@ -18,16 +18,60 @@ import Foundation
 
 /// 학습한 단어 하나의 통계.
 struct PredictionWordEntry: Codable, Equatable {
-    /// 지금까지 입력을 끝낸 횟수.
+    /// 지금까지 입력을 끝낸 횟수. 줄지 않는다 — "몇 번 써야 추천하나"(`minUsesToSuggest`)에 쓴다.
     var count: Int
     /// 마지막으로 쓴 시점. 실제 시각이 아니라 `PredictionModel.tick` 값이다 (시계를 안 써
     /// 테스트가 결정적이고, 기기 시간을 바꿔도 순서가 흐트러지지 않는다).
     var lastUsed: Int
+    /// 순위 점수. `lastUsed` 시점의 값이며, 그 뒤로 다른 단어를 `PredictionEngine.halfLife` 개
+    /// 배울 때마다 절반이 된다(`PredictionEngine.decayedScore`). 쓸 때마다 1 을 더한다.
+    var score: Double
+
+    init(count: Int, lastUsed: Int, score: Double? = nil) {
+        self.count = count
+        self.lastUsed = lastUsed
+        self.score = score ?? Double(count)
+    }
+
+    private enum CodingKeys: String, CodingKey { case count, lastUsed, score }
+
+    /// 판 1 파일에는 `score` 가 없다 — 쓴 횟수를 그대로 점수로 이어받는다.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let count = try c.decodeIfPresent(Int.self, forKey: .count) ?? 0
+        self.init(count: count,
+                  lastUsed: try c.decodeIfPresent(Int.self, forKey: .lastUsed) ?? 0,
+                  score: try c.decodeIfPresent(Double.self, forKey: .score))
+    }
+}
+
+/// 추천이 실제로 도움이 됐는지 재는 숫자. 친 글은 담지 않는다. 개발자 리포트의 "단어 추천" 줄.
+struct PredictionStats: Codable, Equatable {
+    /// 추천 바에 후보가 새로 나타난 횟수.
+    var shown: Int = 0
+    /// 추천을 눌러 고른 횟수.
+    var accepted: Int = 0
+    /// 추천을 골라 직접 치지 않아도 된 글자 수 (고른 단어 글자 수 − 이미 친 글자 수).
+    var savedCharacters: Int = 0
+
+    init() {}
+
+    private enum CodingKeys: String, CodingKey { case shown, accepted, savedCharacters }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        shown = try c.decodeIfPresent(Int.self, forKey: .shown) ?? 0
+        accepted = try c.decodeIfPresent(Int.self, forKey: .accepted) ?? 0
+        savedCharacters = try c.decodeIfPresent(Int.self, forKey: .savedCharacters) ?? 0
+    }
 }
 
 /// 디스크에 저장되는 학습 결과 전체.
+///
+/// 판 2 (2026-11): 단어별 감쇠 점수(`score`)와 효과 측정(`stats`)을 더했다. 판 1 파일도 읽는다 —
+/// 모든 키를 `decodeIfPresent` 로 읽으므로 키가 하나 없다고 통째로 버려지지 않는다.
 struct PredictionModel: Codable, Equatable {
-    static let currentVersion = 1
+    static let currentVersion = 2
 
     var version: Int = PredictionModel.currentVersion
     /// 표시용 원형(입력한 그대로) → 통계.
@@ -39,6 +83,24 @@ struct PredictionModel: Codable, Equatable {
     /// 메인 앱의 "학습 데이터 지우기" 요청 중 마지막으로 반영한 것.
     /// `KeyboardSettings.predictionResetToken` 과 다르면 키보드가 학습 데이터를 비운다.
     var appliedResetToken: String = ""
+    /// 효과 측정. 학습 데이터를 지우면 함께 0 이 된다.
+    var stats = PredictionStats()
+
+    init() {}
+
+    private enum CodingKeys: String, CodingKey {
+        case version, words, bigrams, tick, appliedResetToken, stats
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 1
+        words = try c.decodeIfPresent([String: PredictionWordEntry].self, forKey: .words) ?? [:]
+        bigrams = try c.decodeIfPresent([String: [String: Int]].self, forKey: .bigrams) ?? [:]
+        tick = try c.decodeIfPresent(Int.self, forKey: .tick) ?? 0
+        appliedResetToken = try c.decodeIfPresent(String.self, forKey: .appliedResetToken) ?? ""
+        stats = try c.decodeIfPresent(PredictionStats.self, forKey: .stats) ?? PredictionStats()
+    }
 }
 
 final class PredictionEngine {
@@ -53,6 +115,12 @@ final class PredictionEngine {
     static let maxWordLength = 30
     /// 추천 바에 보여 줄 후보 수.
     static let defaultLimit = 3
+    /// 이만큼 써 본 단어만 추천한다. 한 번 잘못 친 오타가 추천에 뜨지 않게 한다 — 배우기는
+    /// 처음부터 하고 보여 주기만 미룬다 (Grammarly 키보드의 "trust-but-verify" 와 같은 생각).
+    static let minUsesToSuggest = 2
+    /// 반감기: 한 단어를 안 쓴 채 다른 단어를 이만큼 배우면 그 단어 점수가 절반이 된다.
+    /// 시계가 아니라 친 단어 수로 세므로 며칠 쉬어도 잊지 않는다. (사용자 결정 2026-11-11: 3,000)
+    static let halfLife: Double = 3000
 
     private(set) var model: PredictionModel
 
@@ -62,6 +130,21 @@ final class PredictionEngine {
     private var canonicalIndex: [String: String] = [:]
 
     init(model: PredictionModel = PredictionModel()) {
+        var model = model
+        // 판 1 에서는 배웠지만 지금 규칙으로는 배우지 않을 단어(낱자모가 든 "안ㄴ"·"ㅇㅋ" 등)를 비운다.
+        let unlearnable = model.words.keys.filter { !Self.isLearnable($0) }
+        if !unlearnable.isEmpty {
+            let removed = Set(unlearnable)
+            for word in removed { model.words.removeValue(forKey: word) }
+            let removedNormalized = Set(removed.map(Self.normalized))
+            var bigrams: [String: [String: Int]] = [:]
+            for (from, next) in model.bigrams where !removedNormalized.contains(from) {
+                let kept = next.filter { !removed.contains($0.key) }
+                if !kept.isEmpty { bigrams[from] = kept }
+            }
+            model.bigrams = bigrams
+        }
+        model.version = PredictionModel.currentVersion
         self.model = model
         rebuildKeyCache()
     }
@@ -79,7 +162,8 @@ final class PredictionEngine {
         model.tick += 1
 
         let stored = canonicalForm(of: word)
-        var entry = model.words[stored] ?? PredictionWordEntry(count: 0, lastUsed: 0)
+        var entry = model.words[stored] ?? PredictionWordEntry(count: 0, lastUsed: model.tick, score: 0)
+        entry.score = Self.decayedScore(entry, at: model.tick) + 1
         entry.count += 1
         entry.lastUsed = model.tick
         model.words[stored] = entry
@@ -126,6 +210,30 @@ final class PredictionEngine {
         canonicalIndex = [:]
     }
 
+    // MARK: - Stats (효과 측정)
+
+    /// 추천 바에 후보가 새로 나타났다.
+    func recordShown() {
+        model.stats.shown += 1
+    }
+
+    /// 추천을 골랐다. `typed` = 그때까지 친 앞부분.
+    func recordAccepted(word: String, typed: String) {
+        model.stats.accepted += 1
+        model.stats.savedCharacters += max(0, word.count - typed.count)
+    }
+
+    /// 지금 추천에 나올 수 있는 단어 수 (`minUsesToSuggest` 번 이상 쓴 단어).
+    var suggestableWordCount: Int {
+        model.words.values.reduce(0) { $0 + ($1.count >= Self.minUsesToSuggest ? 1 : 0) }
+    }
+
+    /// 개발자 리포트 한 줄. 숫자만 담고 단어는 담지 않는다.
+    var diagnosticLine: String {
+        let s = model.stats
+        return "배운 단어 \(model.words.count)개(추천 가능 \(suggestableWordCount)개) / 추천 보여 줌 \(s.shown)번 / 고름 \(s.accepted)번 / 아낀 글자 \(s.savedCharacters)자"
+    }
+
     // MARK: - Suggestions
 
     /// 추천 후보.
@@ -141,8 +249,9 @@ final class PredictionEngine {
         if prefix.isEmpty {
             return followers
                 .compactMap { follower -> (String, Double)? in
-                    guard model.words[follower.key] != nil else { return nil }
-                    return (follower.key, Double(follower.value) + recencyBonus(for: follower.key))
+                    guard let entry = model.words[follower.key],
+                          entry.count >= Self.minUsesToSuggest else { return nil }
+                    return (follower.key, Double(follower.value) + freshness(of: entry))
                 }
                 .sorted(by: Self.byScoreThenWord)
                 .prefix(limit)
@@ -157,11 +266,12 @@ final class PredictionEngine {
 
         var scored: [(String, Double)] = []
         for (word, entry) in model.words {
-            guard let key = keyCache[word], key.count > prefixKey.count,
+            guard entry.count >= Self.minUsesToSuggest,
+                  let key = keyCache[word], key.count > prefixKey.count,
                   key.hasPrefix(prefixKey),
                   Self.normalized(word) != typed else { continue }
             let followBonus = Double(followers[word] ?? 0) * 3
-            scored.append((word, Double(entry.count) + followBonus + recencyBonus(for: word)))
+            scored.append((word, Self.decayedScore(entry, at: model.tick) + followBonus))
         }
         return scored
             .sorted(by: Self.byScoreThenWord)
@@ -222,7 +332,15 @@ final class PredictionEngine {
         guard !word.contains("ㆍ") else { return false }
         // 아포스트로피만 있는 토큰은 단어가 아니다.
         guard word.contains(where: { $0 != "'" }) else { return false }
+        // 낱자모가 든 단어는 배우지 않는다 — "안ㄴ" 처럼 덜 끝난 글자가 섞인 오타와
+        // "ㅇㅋ"·"ㅎㅎ" 처럼 자모만 쓴 말 둘 다 (사용자 결정 2026-11-11).
+        guard !word.unicodeScalars.contains(where: isStandaloneJamo) else { return false }
         return true
+    }
+
+    /// 음절로 묶이지 않은 한글 자모 (호환 자모 U+3131–318E, 첫가끝 자모 U+1100–11FF).
+    private static func isStandaloneJamo(_ scalar: Unicode.Scalar) -> Bool {
+        (0x3131...0x318E).contains(scalar.value) || (0x1100...0x11FF).contains(scalar.value)
     }
 
     // MARK: - Helpers
@@ -233,10 +351,16 @@ final class PredictionEngine {
         canonicalIndex[Self.normalized(word)] ?? word
     }
 
-    private func recencyBonus(for word: String) -> Double {
-        guard let entry = model.words[word] else { return 0 }
-        let age = Double(model.tick - entry.lastUsed)
-        return max(0, 1 - age / 1000)
+    /// `tick` 시점의 점수: 마지막으로 쓴 뒤 배운 단어 수만큼 반감기로 줄인 값.
+    static func decayedScore(_ entry: PredictionWordEntry, at tick: Int) -> Double {
+        let age = Double(max(0, tick - entry.lastUsed))
+        return entry.score * pow(0.5, age / halfLife)
+    }
+
+    /// 0~1. 방금 쓴 단어는 1, 반감기만큼 지나면 0.5. 다음 단어 후보의 동점 가르기에 쓴다.
+    private func freshness(of entry: PredictionWordEntry) -> Double {
+        let age = Double(max(0, model.tick - entry.lastUsed))
+        return pow(0.5, age / Self.halfLife)
     }
 
     private static func byScoreThenWord(_ lhs: (String, Double), _ rhs: (String, Double)) -> Bool {
@@ -247,9 +371,10 @@ final class PredictionEngine {
         guard model.words.count > Self.maxWords else { return }
         // 한 번에 10% 를 비워 매 학습마다 정렬하지 않게 한다.
         let target = Self.maxWords * 9 / 10
+        let tick = model.tick
         let ranked = model.words.sorted { lhs, rhs in
-            let l = Double(lhs.value.count) + recencyBonus(for: lhs.key) * 5
-            let r = Double(rhs.value.count) + recencyBonus(for: rhs.key) * 5
+            let l = Self.decayedScore(lhs.value, at: tick)
+            let r = Self.decayedScore(rhs.value, at: tick)
             return l != r ? l < r : lhs.key < rhs.key
         }
         let removed = Set(ranked.prefix(model.words.count - target).map { $0.key })
