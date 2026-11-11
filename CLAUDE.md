@@ -758,6 +758,11 @@ v2.2.5 까지 ↗/↘ 를 꺼도 ㅣ/ㅡ 가 들어갔다 — `normalizedDirecti
   넓게 읽은 토큰이 **직접 넣은 단어(의 앞부분)일 때만** 넓게, 그 밖에는 static `currentContext`/`completedWord` 와 같다
   (숫자는 여전히 저절로 배우지 않음). 직접 넣은 "A-4" 를 치는 도중 "A-" 에서 보류된 "A" 는 버린다(`isManualWordAbsorbing`).
   문장부호(. , ? ! ; :)·괄호·따옴표·띄어쓰기는 단어 끝 신호라 넣을 수 없다(`manualWordProblem`).
+- **조사 나눠 배우기 (개선 방안 6번, 2026-11-12 사용자 결정 1가 · 2가 · 3가)**: `learn` 끝에서 `creditStem` — 배운 단어가
+  `josaSplit`(끝에 맞는 **가장 긴 조사 하나만**, 받침 맞음 `josaFits`, 앞부분 두 글자 이상 · `isLearnable`)이면 조사를
+  `model.stemEvidence` 에 모으고, 앞부분이 이미 단어로 있거나 조사가 두 가지 이상일 때 앞부분을 한 번 쓴 것으로 센다(조사 꼴도
+  그대로 배움). 더 짧은 조사로 다시 자르면 「책이라도 → 책이+라도」가 되므로 되돌리지 말 것. 판 3(`currentVersion`)을 처음
+  읽을 때 `backfillStems` 가 지난 조사 꼴에 같은 규칙을 한 번 적용. `forget` 은 증거도 지운다. 조사 후보 추천은 없음
 
 ### 멈추면 저절로 띄기 (새모아, 2026-11-11 사용자 결정)
 - 한글을 친 뒤 `KeyboardViewModel.autoSpaceDelay`(1초 고정) 동안 키를 안 누르면 `inputSpace()` 를 그대로 부른다 — 조합 끝내기 · 단축어 · 단어 학습 · 스페이스 두 번 → 마침표가 직접 친 스페이스와 같게 돈다.

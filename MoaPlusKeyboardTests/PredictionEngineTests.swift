@@ -193,7 +193,7 @@ final class PredictionEngineTests: XCTestCase {
         let data = try JSONEncoder().encode(engine.model)
         let decoded = try JSONDecoder().decode(PredictionModel.self, from: data)
         XCTAssertEqual(decoded, engine.model)
-        XCTAssertEqual(decoded.version, 2)
+        XCTAssertEqual(decoded.version, 3)
         XCTAssertEqual(PredictionEngine(model: decoded).suggestions(prefix: "드", previous: nil), ["드립니다"])
     }
 
@@ -382,6 +382,76 @@ final class PredictionEngineTests: XCTestCase {
             [PredictionEditRequest].self,
             from: JSONEncoder().encode([PredictionEditRequest(id: 1, edit: .rename(from: "가", to: "나"))]))
         XCTAssertEqual(request.first?.edit, .rename(from: "가", to: "나"))
+    }
+
+    // MARK: - 조사 나눠 배우기 (개선 방안 6번, 2026-11-12)
+
+    func testJosaSplit_followsJosaListFinalConsonantAndLength() {
+        func split(_ word: String) -> String? {
+            PredictionEngine.josaSplit(word).map { "\($0.stem)+\($0.josa)" }
+        }
+        XCTAssertEqual(split("감정평가를"), "감정평가+를")
+        XCTAssertEqual(split("감정평가에서"), "감정평가+에서", "긴 조사부터 맞춘다")
+        XCTAssertEqual(split("책상을"), "책상+을")
+        XCTAssertEqual(split("서울로"), "서울+로", "ㄹ 받침 뒤는 로")
+        XCTAssertEqual(split("부산으로"), "부산+으로")
+        XCTAssertNil(split("나이"), "앞부분이 한 글자")
+        XCTAssertNil(split("사이"), "받침 없는 글자 뒤 '이' 는 조사가 아니다")
+        XCTAssertNil(split("학교은"), "받침이 맞지 않는다")
+        XCTAssertNil(split("서울으로"), "ㄹ 받침 뒤 으로는 아니다")
+        XCTAssertNil(split("책이라도"), "가장 긴 조사가 맞지 않으면 더 짧은 조사로 다시 자르지 않는다")
+        XCTAssertNil(split("책으로"))
+        XCTAssertNil(split("바다"))
+    }
+
+    func testJosaForms_creditStemOnlyWithEvidence() {
+        let engine = PredictionEngine()
+        engine.learn("감정평가사", times: 2)
+        engine.learn(word: "감정평가를", previous: nil)
+        XCTAssertNil(engine.model.words["감정평가"], "조사 한 가지로는 앞부분을 단어로 치지 않는다")
+        engine.learn(word: "감정평가의", previous: nil)
+        XCTAssertEqual(engine.model.words["감정평가"]?.count, 1, "서로 다른 조사 두 가지 = 증거")
+        engine.learn(word: "감정평가는", previous: nil)
+        XCTAssertEqual(engine.model.words["감정평가"]?.count, 2)
+        XCTAssertEqual(engine.model.words["감정평가를"]?.count, 1, "조사 붙은 꼴도 그대로 배운다")
+        XCTAssertEqual(Set(engine.suggestions(prefix: "감정", previous: nil).prefix(2)), ["감정평가", "감정평가사"])
+    }
+
+    func testJosaForm_creditsStemAlreadyUsedAlone() {
+        let engine = PredictionEngine()
+        engine.learn(word: "회의", previous: nil)
+        engine.learn(word: "회의를", previous: nil)
+        XCTAssertEqual(engine.model.words["회의"]?.count, 2, "따로 쓴 적이 있는 앞부분은 바로 센다")
+    }
+
+    func testJosaLookalike_withoutEvidence_isNotSplit() {
+        let engine = PredictionEngine()
+        engine.learn("고양이", times: 3)
+        XCTAssertNil(engine.model.words["고양"], "고양+이 꼴이지만 증거가 없다")
+    }
+
+    func testForget_clearsStemEvidence() {
+        let engine = PredictionEngine()
+        engine.learn(word: "회의", previous: nil)
+        engine.learn(word: "회의를", previous: nil)
+        engine.forget(word: "회의")
+        engine.learn(word: "회의의", previous: nil)
+        XCTAssertNil(engine.model.words["회의"], "지운 단어가 조사 앞부분으로 곧바로 되살아나지 않는다")
+    }
+
+    func testVersion2File_backfillsStemsOnce() {
+        var old = PredictionModel()
+        old.version = 2
+        old.tick = 10
+        old.words["감정평가사"] = PredictionWordEntry(count: 5, lastUsed: 9)
+        old.words["감정평가를"] = PredictionWordEntry(count: 1, lastUsed: 3)
+        old.words["감정평가의"] = PredictionWordEntry(count: 1, lastUsed: 4)
+        old.words["고양이"] = PredictionWordEntry(count: 4, lastUsed: 5)
+        let engine = PredictionEngine(model: old)
+        XCTAssertEqual(engine.model.words["감정평가"]?.count, 2, "이미 배운 조사 꼴의 횟수를 앞부분에 센다")
+        XCTAssertNil(engine.model.words["고양"])
+        XCTAssertEqual(engine.model.version, 3)
+        XCTAssertEqual(PredictionEngine(model: engine.model).model.words["감정평가"]?.count, 2, "한 번만 한다")
     }
 }
 

@@ -70,8 +70,9 @@ struct PredictionStats: Codable, Equatable {
 ///
 /// 판 2 (2026-11): 단어별 감쇠 점수(`score`)와 효과 측정(`stats`)을 더했다. 판 1 파일도 읽는다 —
 /// 모든 키를 `decodeIfPresent` 로 읽으므로 키가 하나 없다고 통째로 버려지지 않는다.
+/// 판 3 (2026-11-12): 직접 넣은 단어(`manualWords`) · 편집 번호(`appliedEditId`) · 조사 증거(`stemEvidence`).
 struct PredictionModel: Codable, Equatable {
-    static let currentVersion = 2
+    static let currentVersion = 3
 
     var version: Int = PredictionModel.currentVersion
     /// 표시용 원형(입력한 그대로) → 통계.
@@ -91,11 +92,14 @@ struct PredictionModel: Codable, Equatable {
     var manualWords: Set<String> = []
     /// 메인 앱의 편집 요청(`PredictionEditRequest`) 중 마지막으로 반영한 번호.
     var appliedEditId: Int = 0
+    /// 조사 나눠 배우기의 증거: 앞부분(소문자 정규형) → 그 뒤에 붙어 나온 조사들.
+    /// 서로 다른 조사로 두 번 이상 나오면 앞부분을 단어로 친다 (`PredictionEngine.creditStem`).
+    var stemEvidence: [String: [String]] = [:]
 
     init() {}
 
     private enum CodingKeys: String, CodingKey {
-        case version, words, bigrams, tick, appliedResetToken, stats, manualWords, appliedEditId
+        case version, words, bigrams, tick, appliedResetToken, stats, manualWords, appliedEditId, stemEvidence
     }
 
     init(from decoder: Decoder) throws {
@@ -108,6 +112,7 @@ struct PredictionModel: Codable, Equatable {
         stats = try c.decodeIfPresent(PredictionStats.self, forKey: .stats) ?? PredictionStats()
         manualWords = try c.decodeIfPresent(Set<String>.self, forKey: .manualWords) ?? []
         appliedEditId = try c.decodeIfPresent(Int.self, forKey: .appliedEditId) ?? 0
+        stemEvidence = try c.decodeIfPresent([String: [String]].self, forKey: .stemEvidence) ?? [:]
     }
 }
 
@@ -177,9 +182,43 @@ final class PredictionEngine {
             }
             model.bigrams = bigrams
         }
+        let needsStemBackfill = model.version < 3
         model.version = PredictionModel.currentVersion
         self.model = model
         rebuildKeyCache()
+        if needsStemBackfill { backfillStems() }
+    }
+
+    /// 판 3 을 처음 읽을 때 한 번: 이미 배운 조사 붙은 꼴("감정평가를" · "감정평가의")에서도 앞부분을 센다.
+    /// 증거 규칙은 새로 배울 때와 같다(앞부분이 따로 있거나 조사가 두 가지 이상). 센 양은 조사 붙은 꼴들의
+    /// 쓴 횟수 합 — 그때마다 앞부분도 한 번 쓴 것으로 치는 규칙(사용자 결정 1가)을 지난 기록에 적용한 것.
+    private func backfillStems() {
+        var groups: [String: (stem: String, josa: Set<String>, count: Int, score: Double, lastUsed: Int)] = [:]
+        let tick = model.tick
+        for (word, entry) in model.words {
+            guard let (stem, josa) = Self.josaSplit(word) else { continue }
+            let key = Self.normalized(stem)
+            var g = groups[key] ?? (stem, [], 0, 0, 0)
+            g.josa.insert(josa)
+            g.count += entry.count
+            g.score += Self.decayedScore(entry, at: tick)
+            g.lastUsed = max(g.lastUsed, entry.lastUsed)
+            groups[key] = g
+        }
+        for (key, g) in groups {
+            model.stemEvidence[key] = g.josa.sorted()
+            let stored = canonicalIndex[key] ?? g.stem
+            let existing = model.words[stored]
+            guard existing != nil || g.josa.count >= 2 else { continue }
+            var entry = existing ?? PredictionWordEntry(count: 0, lastUsed: g.lastUsed, score: 0)
+            entry.score = Self.decayedScore(entry, at: tick) + g.score
+            entry.count += g.count
+            entry.lastUsed = max(entry.lastUsed, g.lastUsed)
+            model.words[stored] = entry
+            keyCache[stored] = Self.matchKey(for: stored)
+            canonicalIndex[key] = stored
+        }
+        pruneStemEvidenceIfNeeded()
     }
 
     // MARK: - Learning
@@ -216,8 +255,92 @@ final class PredictionEngine {
             model.bigrams[from] = next
         }
 
+        creditStem(of: stored)
         pruneIfNeeded()
         return true
+    }
+
+    // MARK: - 조사 나눠 배우기 (개선 방안 6번, 2026-11-12 사용자 결정)
+    //
+    // "감정평가를" 을 쓰면 "감정평가를" 을 그대로 배우고, 앞부분 "감정평가" 도 한 번 쓴 것으로 센다(1가).
+    // 잘못 나누지 않도록 — 조사 목록에 있는 것만 · 받침이 맞을 때만("나이" 는 나+이 아님) · 앞부분 두 글자
+    // 이상 — 이고, 증거가 있을 때만 센다(2가): 앞부분을 따로 쓴 적이 있거나, 서로 다른 조사로 두 번 이상
+    // 나왔을 때("감정평가를" · "감정평가의"). "고양이"(고양+이)처럼 우연히 조사 꼴로 끝나는 말을 거른다.
+    // 앞부분을 고른 뒤 조사를 추천하는 일은 하지 않는다(3가).
+
+    /// 받침이 있을 때만 붙는 조사 · 없을 때만 붙는 조사 · 어느 쪽에나 붙는 조사.
+    /// "로" 는 받침 없거나 ㄹ 받침 뒤, "으로" 는 ㄹ 아닌 받침 뒤 (`josaFits`).
+    static let josaAfterFinal: [String] = ["으로는", "이라도", "으로", "이나", "이랑", "을", "은", "이", "과"]
+    static let josaAfterNoFinal: [String] = ["로는", "라도", "로", "나", "랑", "를", "는", "가", "와"]
+    static let josaAny: [String] = [
+        "에서는", "에게는", "에서", "에게", "에는", "에도", "께서", "한테", "까지", "부터", "보다", "처럼",
+        "마다", "조차", "밖에", "하고", "의", "에", "께", "도", "만",
+    ]
+    /// 긴 조사부터 맞춘다 — "에서" 를 "에" 로 자르지 않게.
+    private static let josaByLength: [String] =
+        (josaAfterFinal + josaAfterNoFinal + josaAny).sorted { $0.count > $1.count }
+    /// 증거로 기억할 앞부분 수. 넘으면 절반을 비운다.
+    static let maxStemEvidence = 3000
+
+    /// 조사가 붙은 꼴이면 (앞부분, 조사). 받침이 맞지 않거나 앞부분이 두 글자보다 짧으면 `nil`.
+    /// 끝에 맞는 가장 긴 조사 하나만 본다 — 그것이 맞지 않으면 더 짧은 조사로 다시 자르지 않는다
+    /// ("책이라도" 를 "책이" + 라도, "책으로" 를 "책으" + 로 로 자르지 않게).
+    static func josaSplit(_ word: String) -> (stem: String, josa: String)? {
+        guard let josa = josaByLength.first(where: { word.hasSuffix($0) }) else { return nil }
+        let stem = String(word.dropLast(josa.count))
+        guard stem.count >= 2, isLearnable(stem),
+              let last = stem.unicodeScalars.last,
+              (0xAC00...0xD7A3).contains(last.value) else { return nil }
+        let final = Int(last.value - 0xAC00) % 28
+        return josaFits(josa, final: final) ? (stem, josa) : nil
+    }
+
+    /// 앞 글자 받침(`final`, 0 = 없음, 8 = ㄹ)과 조사가 맞는지.
+    private static func josaFits(_ josa: String, final: Int) -> Bool {
+        let hasFinal = final != 0
+        let isRieul = final == 8
+        switch josa {
+        case "로", "로는": return !hasFinal || isRieul
+        case "으로", "으로는": return hasFinal && !isRieul
+        default:
+            if josaAfterFinal.contains(josa) { return hasFinal }
+            if josaAfterNoFinal.contains(josa) { return !hasFinal }
+            return true
+        }
+    }
+
+    /// 방금 배운 단어가 조사 붙은 꼴이고 증거가 있으면 앞부분도 한 번 쓴 것으로 센다.
+    private func creditStem(of word: String) {
+        guard let (stem, josa) = Self.josaSplit(word) else { return }
+        let key = Self.normalized(stem)
+        var seen = model.stemEvidence[key] ?? []
+        if !seen.contains(josa) {
+            seen.append(josa)
+            model.stemEvidence[key] = seen
+        }
+        let storedStem = canonicalForm(of: stem)
+        guard model.words[storedStem] != nil || seen.count >= 2 else {
+            pruneStemEvidenceIfNeeded()
+            return
+        }
+        var entry = model.words[storedStem] ?? PredictionWordEntry(count: 0, lastUsed: model.tick, score: 0)
+        entry.score = Self.decayedScore(entry, at: model.tick) + 1
+        entry.count += 1
+        entry.lastUsed = model.tick
+        model.words[storedStem] = entry
+        keyCache[storedStem] = Self.matchKey(for: storedStem)
+        canonicalIndex[key] = storedStem
+        pruneStemEvidenceIfNeeded()
+    }
+
+    private func pruneStemEvidenceIfNeeded() {
+        guard model.stemEvidence.count > Self.maxStemEvidence else { return }
+        // 이미 단어로 배운 앞부분은 증거가 더 필요 없으니 먼저 비우고, 그래도 많으면 절반을 비운다.
+        model.stemEvidence = model.stemEvidence.filter { canonicalIndex[$0.key] == nil }
+        if model.stemEvidence.count > Self.maxStemEvidence {
+            let keep = Set(model.stemEvidence.keys.sorted().suffix(Self.maxStemEvidence / 2))
+            model.stemEvidence = model.stemEvidence.filter { keep.contains($0.key) }
+        }
     }
 
     /// 단어 하나를 완전히 잊는다 (추천 바에서 길게 눌러 삭제).
@@ -233,6 +356,8 @@ final class PredictionEngine {
         }
         model.bigrams.removeValue(forKey: key)
         model.manualWords.remove(key)
+        // 지운 단어가 조사 앞부분으로 곧바로 되살아나지 않게 증거도 지운다.
+        model.stemEvidence.removeValue(forKey: key)
     }
 
     /// 학습 데이터를 모두 지운다. 마지막으로 반영한 초기화 토큰은 남긴다.
