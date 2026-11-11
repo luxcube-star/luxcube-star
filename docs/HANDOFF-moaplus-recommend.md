@@ -24,8 +24,7 @@
 - 설치 방법: 맥미니 AltServer **Option+클릭 › Sideload .ipa...** (무선 동작 확인)
 
 ## 현재 미해결
-- 앱에서 바꾼 설정(클래식 레이아웃)이 키보드(카카오톡)에 반영 안 됨. 전체 접근 허용 ON.
-  - 원인 추정: unsigned IPA 라 entitlements 없음 → AltServer 가 App Group 미부여. run 42827220954 IPA 에서 수정(빌드 로그로 entitlements 확인) — **기기 설치 결과 미확인**
-  - 안 되면: 앱 › 설정 › 입력 기록 › 개발자 리포트의 "전체 접근", "App Group" 줄 확인
+- ~~앱에서 바꾼 설정(클래식 레이아웃)이 키보드(카카오톡)에 반영 안 됨~~ → **해결됨: 2026-11-10 실기기 확인 — 3d10d71(App Group entitlements 주입)으로 해결** (run 42827220954 IPA)
+  - 원인: unsigned IPA 라 entitlements 없음 → AltServer 가 App Group 미부여
 - 사용자가 말한 "그 밖의 오류 많음" — 구체 목록 아직 못 받음
 - 7일마다 맥미니에서 재설치 필요 (AltStore 로그인 고쳐지기 전까지)
