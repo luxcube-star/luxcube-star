@@ -184,6 +184,33 @@ final class KeyboardViewModelPredictionTests: XCTestCase {
         XCTAssertEqual(engine.model.appliedResetToken, "reset-1")
     }
 
+    // MARK: - 직접 넣은 단어 (「학습한 단어」 화면, 2026-11-12)
+
+    func testManualSymbolWord_isLearnedWhole_notItsLetterPart() {
+        engine.apply(edits: [PredictionEditRequest(id: 1, edit: .add("A-4"))])
+        delegate.text = "A"
+        viewModel.inputSymbol("-")
+        viewModel.refreshPredictions()
+        XCTAssertEqual(viewModel.predictionSuggestions, ["A-4"])
+        delegate.text += "4"
+        viewModel.refreshPredictions()
+        viewModel.inputSpace()
+        viewModel.refreshPredictions()
+        delegate.text += "다"
+        viewModel.refreshPredictions()
+        XCTAssertEqual(engine.model.words["A-4"]?.count, 3)
+        XCTAssertNil(engine.model.words["A"], "직접 넣은 단어를 치는 도중 앞부분을 따로 배우지 않는다")
+    }
+
+    func testAcceptManualDigitWord_replacesDigitPrefix() {
+        engine.apply(edits: [PredictionEditRequest(id: 1, edit: .add("3층"))])
+        delegate.text = "회의는 3"
+        viewModel.refreshPredictions()
+        XCTAssertEqual(viewModel.predictionSuggestions, ["3층"])
+        viewModel.acceptPrediction("3층")
+        XCTAssertEqual(delegate.text, "회의는 3층 ")
+    }
+
     // MARK: - 멈추면 저절로 띄기 (2026-11-11)
 
     private func typeGa() {

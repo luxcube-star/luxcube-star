@@ -13,6 +13,7 @@ struct InputBehaviorSettingsView: View {
             Section {
                 Toggle("단어 추천 바", isOn: $settings.predictionEnabled)
                 Toggle("입력한 단어 학습", isOn: $settings.predictionLearningEnabled)
+                NavigationLink("학습한 단어") { PredictionWordsView() }
                 Button(role: .destructive) {
                     isConfirmingPredictionReset = true
                 } label: {
@@ -22,7 +23,7 @@ struct InputBehaviorSettingsView: View {
             } header: {
                 Text("단어 추천")
             } footer: {
-                Text("자주 쓰는 단어를 학습해 키보드 위에 추천합니다. 입력 중인 단어를 완성하거나(예: \"감정\" → \"감정평가서\"), 스페이스를 친 뒤 다음에 이어 쓸 단어를 보여 줍니다. 추천 단어를 탭하면 입력되고, 길게 누르면 그 단어를 잊습니다.\n\n학습 데이터는 이 기기 안에만 저장되며 외부로 전송되지 않습니다. 숫자가 들어간 단어와 이메일·주소·전화번호·비밀번호·인증번호 입력란의 내용은 학습하지 않습니다.")
+                Text("자주 쓰는 단어를 학습해 키보드 위에 추천합니다. 입력 중인 단어를 완성하거나(예: \"감정\" → \"감정평가서\"), 스페이스를 친 뒤 다음에 이어 쓸 단어를 보여 줍니다. 추천 단어를 탭하면 입력되고, 길게 누르면 그 단어를 잊습니다.\n\n학습 데이터는 이 기기 안에만 저장되며 외부로 전송되지 않습니다. 숫자가 들어간 단어와 이메일·주소·전화번호·비밀번호·인증번호 입력란의 내용은 학습하지 않습니다. 「학습한 단어」에서 배운 단어를 보고 고칠 수 있고, 숫자나 기호가 든 단어(예: 3층)는 직접 넣으면 추천합니다.")
             }
             .confirmationDialog("학습한 단어를 모두 지울까요?", isPresented: $isConfirmingPredictionReset, titleVisibility: .visible) {
                 Button("모두 지우기", role: .destructive) { resetPrediction() }

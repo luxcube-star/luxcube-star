@@ -1569,9 +1569,16 @@ class KeyboardViewModel: ObservableObject {
         let before = delegate?.textBeforeCursor() ?? ""
 
         // 보류한 단어 뒤에 다른 글자를 쳤다(또는 문맥이 바뀌었다) — 이제 오타로 지울 일이 없으니 배운다.
-        if let held = heldPrediction,
-           PredictionEngine.completedWord(in: before)?.signature != held.signature {
-            commitHeldPrediction()
+        if let held = heldPrediction {
+            let completed = predictionEngine.completedWordConsideringManual(in: before)
+            if completed?.signature != held.signature {
+                if let completed, isManualWordAbsorbing(held: held, into: completed) {
+                    // 직접 넣은 단어("A-4")를 치는 도중 앞부분("A")이 끝난 단어로 잡혔던 것 — 배우지 않는다.
+                    heldPrediction = nil
+                } else {
+                    commitHeldPrediction()
+                }
+            }
         }
 
         if pendingPredictionLearn {
@@ -1586,18 +1593,41 @@ class KeyboardViewModel: ObservableObject {
             return
         }
         applyPredictionResetIfNeeded(token: settings.predictionResetToken)
-        let context = PredictionEngine.currentContext(in: before)
+        let context = predictionEngine.suggestionContext(in: before)
         setPredictionSuggestions(
             predictionEngine.suggestions(prefix: context.current, previous: context.previous))
     }
 
     /// 방금 끝난 단어를 바로 배우지 않고 보류한다. 앞에 보류한 단어가 있으면 그것을 먼저 배운다.
     private func learnCompletedWord(in before: String) {
-        guard let completed = PredictionEngine.completedWord(in: before),
+        guard let completed = predictionEngine.completedWordConsideringManual(in: before),
               completed.signature != lastLearnedSignature else { return }
         commitHeldPrediction()
         lastLearnedSignature = completed.signature
         heldPrediction = completed
+    }
+
+    /// `completed` 가 직접 넣은 단어이고, 보류한 단어가 그 단어의 앞부분(같은 토큰, 사이에 공백 없음)인지.
+    private func isManualWordAbsorbing(
+        held: (word: String, previous: String?, signature: String),
+        into completed: (word: String, previous: String?, signature: String)
+    ) -> Bool {
+        guard predictionEngine.isManual(completed.word),
+              completed.signature.hasPrefix(held.signature) else { return false }
+        return !completed.signature.dropFirst(held.signature.count).contains(where: { $0.isWhitespace })
+    }
+
+    /// 메인 앱 「학습한 단어」 화면에서 넣고·고치고·지운 것을 반영한다. 키보드가 뜰 때마다 부른다.
+    /// 지우기 요청을 먼저 반영한다 — 지운 뒤 넣은 단어가 늦게 온 지우기에 함께 지워지지 않게.
+    func applyPendingPredictionEdits() {
+        let settings = KeyboardSettings.shared
+        // 추천도 학습도 끈 사용자는 학습 파일을 읽지 않는다 — 요청은 파일에 남아 켤 때 반영된다.
+        guard !previewMode, settings.predictionEnabled || settings.predictionLearningEnabled else { return }
+        applyPredictionResetIfNeeded(token: settings.predictionResetToken)
+        let edits = PredictionStore.loadEdits()
+        guard !edits.isEmpty, predictionEngine.apply(edits: edits) else { return }
+        schedulePredictionSave()
+        schedulePredictionRefresh()
     }
 
     /// 보류한 단어를 배운다.
@@ -1615,7 +1645,7 @@ class KeyboardViewModel: ObservableObject {
     private func discardHeldPredictionIfJustCompleted() {
         guard let held = heldPrediction else { return }
         let before = delegate?.textBeforeCursor() ?? ""
-        guard PredictionEngine.completedWord(in: before)?.signature == held.signature else { return }
+        guard predictionEngine.completedWordConsideringManual(in: before)?.signature == held.signature else { return }
         heldPrediction = nil
         lastLearnedSignature = nil
     }
@@ -1627,7 +1657,7 @@ class KeyboardViewModel: ObservableObject {
         autoSpacePausedByBackspace = false
         guard !previewMode else { return }
         let before = delegate?.textBeforeCursor() ?? ""
-        let current = PredictionEngine.currentContext(in: before).current
+        let current = predictionEngine.suggestionContext(in: before).current
         // 조합 중인 글자는 이미 화면에 있고 `current` 에 포함돼 있다. 조합 상태만 버리고
         // 화면의 글자는 아래에서 함께 지운다 (`commitCurrent` 는 약어 엔진에 글자를
         // 흘려보내므로 쓰지 않는다).

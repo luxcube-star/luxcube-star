@@ -747,6 +747,17 @@ v2.2.5 까지 ↗/↘ 를 꺼도 ㅣ/ㅡ 가 들어갔다 — `normalizedDirecti
   개발자 리포트 "단어 추천" 줄. 단어는 담지 않는다.
 - 추천 선택은 조합 상태를 버리고(`commitCurrent` 아님 — 약어 엔진에 흘리지 않기 위해) 화면의 입력 중 단어를 지운 뒤 단어 + 스페이스.
 - 저장은 App Group 파일 우선, 실패하면 익스텐션 로컬. 로컬 파일을 읽지 못하면(기기 보호) 저장을 막아 덮어쓰기를 피한다.
+- **「학습한 단어」 화면 (새모아, 2026-11-12 사용자 결정)** `MoaPlus/Settings/PredictionWordsView.swift`. 앱은 학습 파일을
+  **직접 고치지 않는다** — 키보드가 모델을 메모리에 들고 있다가 통째로 덮어써 지워진다. 앱은 `PredictionStore.appendEdit`
+  로 App Group `prediction-edits.json` 에 번호 붙은 요청(`PredictionEditRequest`: add / delete / rename)을 남기고, 키보드가
+  `viewWillAppear`·호스트 복귀(전체 접근 ON)에서 `applyPendingPredictionEdits()` 로 **지우기 토큰을 먼저** 반영한 뒤
+  `model.appliedEditId` 보다 큰 것만 반영해 저장한다. 앱의 "학습 데이터 지우기"는 요청 파일도 지우고, 키보드 `reset` 은
+  `appliedEditId` 를 0 으로 돌린다(다음 요청은 1 번부터). 화면은 저장 파일 + 남은 요청을 얹어 보여 준다.
+- 직접 넣은 단어 = `model.manualWords`(소문자 정규형). 넣자마자 추천(쓴 횟수 2), `isLearnable` 정리에서 빠지고, 숫자·기호
+  (`manualWordSymbols`)를 품을 수 있다. 문맥은 `suggestionContext(in:)`·`completedWordConsideringManual(in:)` 로 읽는다 —
+  넓게 읽은 토큰이 **직접 넣은 단어(의 앞부분)일 때만** 넓게, 그 밖에는 static `currentContext`/`completedWord` 와 같다
+  (숫자는 여전히 저절로 배우지 않음). 직접 넣은 "A-4" 를 치는 도중 "A-" 에서 보류된 "A" 는 버린다(`isManualWordAbsorbing`).
+  문장부호(. , ? ! ; :)·괄호·따옴표·띄어쓰기는 단어 끝 신호라 넣을 수 없다(`manualWordProblem`).
 
 ### 멈추면 저절로 띄기 (새모아, 2026-11-11 사용자 결정)
 - 한글을 친 뒤 `KeyboardViewModel.autoSpaceDelay`(1초 고정) 동안 키를 안 누르면 `inputSpace()` 를 그대로 부른다 — 조합 끝내기 · 단축어 · 단어 학습 · 스페이스 두 번 → 마침표가 직접 친 스페이스와 같게 돈다.

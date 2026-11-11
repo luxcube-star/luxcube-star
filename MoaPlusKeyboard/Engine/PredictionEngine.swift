@@ -85,11 +85,17 @@ struct PredictionModel: Codable, Equatable {
     var appliedResetToken: String = ""
     /// 효과 측정. 학습 데이터를 지우면 함께 0 이 된다.
     var stats = PredictionStats()
+    /// 메인 앱 「학습한 단어」 화면에서 사용자가 직접 넣거나 고친 단어(소문자 정규형).
+    /// 이 단어들은 저절로 배우기 규칙(`isLearnable`)과 상관없이 남고, 칠 때 숫자·기호까지 단어로 읽는다
+    /// (사용자 결정 2026-11-12: 넣은 단어는 규칙 적용 안 함 · 숫자·기호는 넣은 단어만).
+    var manualWords: Set<String> = []
+    /// 메인 앱의 편집 요청(`PredictionEditRequest`) 중 마지막으로 반영한 번호.
+    var appliedEditId: Int = 0
 
     init() {}
 
     private enum CodingKeys: String, CodingKey {
-        case version, words, bigrams, tick, appliedResetToken, stats
+        case version, words, bigrams, tick, appliedResetToken, stats, manualWords, appliedEditId
     }
 
     init(from decoder: Decoder) throws {
@@ -100,7 +106,30 @@ struct PredictionModel: Codable, Equatable {
         tick = try c.decodeIfPresent(Int.self, forKey: .tick) ?? 0
         appliedResetToken = try c.decodeIfPresent(String.self, forKey: .appliedResetToken) ?? ""
         stats = try c.decodeIfPresent(PredictionStats.self, forKey: .stats) ?? PredictionStats()
+        manualWords = try c.decodeIfPresent(Set<String>.self, forKey: .manualWords) ?? []
+        appliedEditId = try c.decodeIfPresent(Int.self, forKey: .appliedEditId) ?? 0
     }
+}
+
+/// 메인 앱 「학습한 단어」 화면의 편집 하나.
+///
+/// 앱은 학습 파일을 직접 고치지 않는다 — 키보드는 학습 데이터를 메모리에 들고 있다가 통째로 덮어써
+/// 앱이 고친 것이 지워지기 때문이다. 앱은 요청만 공유 폴더에 남기고(`PredictionStore.appendEdit`),
+/// 키보드가 뜰 때 반영해 저장한다(`PredictionEngine.apply(edits:)`). "학습 데이터 지우기"의
+/// `predictionResetToken` 과 같은 방식이다.
+enum PredictionEdit: Codable, Equatable {
+    /// 단어를 넣는다. 넣자마자 추천에 나온다(두 번 쓴 것으로 친다).
+    case add(String)
+    /// 단어를 잊는다 (추천 바에서 길게 누른 것과 같다).
+    case delete(String)
+    /// 단어 글자를 고친다. 쓴 횟수·순위·이어 쓴 짝을 이어받는다.
+    case rename(from: String, to: String)
+}
+
+struct PredictionEditRequest: Codable, Equatable {
+    /// 1 부터 오르는 번호. 키보드는 `PredictionModel.appliedEditId` 보다 큰 것만 반영한다.
+    var id: Int
+    var edit: PredictionEdit
 }
 
 final class PredictionEngine {
@@ -132,7 +161,11 @@ final class PredictionEngine {
     init(model: PredictionModel = PredictionModel()) {
         var model = model
         // 판 1 에서는 배웠지만 지금 규칙으로는 배우지 않을 단어(낱자모가 든 "안ㄴ"·"ㅇㅋ" 등)를 비운다.
-        let unlearnable = model.words.keys.filter { !Self.isLearnable($0) }
+        // 사용자가 직접 넣은 단어는 남긴다.
+        let manual = model.manualWords
+        let unlearnable = model.words.keys.filter {
+            !Self.isLearnable($0) && !manual.contains(Self.normalized($0))
+        }
         if !unlearnable.isEmpty {
             let removed = Set(unlearnable)
             for word in removed { model.words.removeValue(forKey: word) }
@@ -158,7 +191,7 @@ final class PredictionEngine {
     ///   - previous: 같은 문장에서 바로 앞에 쓴 단어. 없으면 `nil`
     @discardableResult
     func learn(word: String, previous: String?) -> Bool {
-        guard Self.isLearnable(word) else { return false }
+        guard Self.isLearnable(word) || isManual(word) else { return false }
         model.tick += 1
 
         let stored = canonicalForm(of: word)
@@ -170,7 +203,7 @@ final class PredictionEngine {
         keyCache[stored] = Self.matchKey(for: stored)
         canonicalIndex[Self.normalized(stored)] = stored
 
-        if let previous, Self.isLearnable(previous) {
+        if let previous, Self.isLearnable(previous) || isManual(previous) {
             let from = Self.normalized(previous)
             var next = model.bigrams[from] ?? [:]
             next[stored, default: 0] += 1
@@ -199,15 +232,125 @@ final class PredictionEngine {
             }
         }
         model.bigrams.removeValue(forKey: key)
+        model.manualWords.remove(key)
     }
 
     /// 학습 데이터를 모두 지운다. 마지막으로 반영한 초기화 토큰은 남긴다.
+    /// 편집 번호(`appliedEditId`)는 0 으로 돌린다 — 앱이 지우기와 함께 편집 요청 파일도 지우므로
+    /// 다음 요청은 1 번부터 다시 온다.
     func reset(appliedResetToken: String? = nil) {
         let token = appliedResetToken ?? model.appliedResetToken
         model = PredictionModel()
         model.appliedResetToken = token
         keyCache = [:]
         canonicalIndex = [:]
+    }
+
+    // MARK: - 직접 넣은 단어 (메인 앱 「학습한 단어」 화면)
+
+    /// 사용자가 직접 넣거나 고친 단어인지.
+    func isManual(_ word: String) -> Bool {
+        model.manualWords.contains(Self.normalized(word))
+    }
+
+    /// 앱의 편집 요청 중 아직 반영하지 않은 것을 번호 순서대로 반영한다. 바뀐 게 있으면 `true`.
+    @discardableResult
+    func apply(edits: [PredictionEditRequest]) -> Bool {
+        let pending = edits.filter { $0.id > model.appliedEditId }.sorted { $0.id < $1.id }
+        guard let last = pending.last else { return false }
+        for request in pending {
+            switch request.edit {
+            case .add(let word): addManual(word)
+            case .delete(let word): forget(word: word)
+            case .rename(let from, let to): rename(from: from, to: to)
+            }
+        }
+        model.appliedEditId = last.id
+        return true
+    }
+
+    /// 단어를 직접 넣는다. 이미 있으면 직접 넣은 단어로 표시하고, 추천에 나오도록 쓴 횟수를 채운다.
+    private func addManual(_ word: String) {
+        guard Self.manualWordProblem(word) == nil else { return }
+        let stored = canonicalForm(of: word)
+        var entry = model.words[stored] ?? PredictionWordEntry(count: 0, lastUsed: model.tick, score: 0)
+        entry.score = max(Self.decayedScore(entry, at: model.tick), Double(Self.minUsesToSuggest))
+        entry.count = max(entry.count, Self.minUsesToSuggest)
+        entry.lastUsed = model.tick
+        model.words[stored] = entry
+        keyCache[stored] = Self.matchKey(for: stored)
+        canonicalIndex[Self.normalized(stored)] = stored
+        model.manualWords.insert(Self.normalized(stored))
+        pruneIfNeeded()
+    }
+
+    /// 단어 글자를 고친다. 쓴 횟수·순위·이어 쓴 짝을 새 글자로 옮긴다. 새 글자가 이미 있으면 합친다.
+    private func rename(from old: String, to new: String) {
+        guard Self.manualWordProblem(new) == nil,
+              let oldStored = canonicalIndex[Self.normalized(old)],
+              let oldEntry = model.words[oldStored] else { return }
+        let oldKey = Self.normalized(oldStored)
+        let newKey = Self.normalized(new)
+
+        // 1. 단어 통계: 옛 단어를 빼고 새 단어에 넣는다(있으면 합친다).
+        model.words.removeValue(forKey: oldStored)
+        keyCache.removeValue(forKey: oldStored)
+        canonicalIndex.removeValue(forKey: oldKey)
+        let newStored = canonicalIndex[newKey] ?? new
+        var entry = oldEntry
+        if let existing = model.words[newStored] {
+            let tick = model.tick
+            entry.count += existing.count
+            entry.score = Self.decayedScore(oldEntry, at: tick) + Self.decayedScore(existing, at: tick)
+            entry.lastUsed = tick
+        }
+        model.words[newStored] = entry
+        keyCache[newStored] = Self.matchKey(for: newStored)
+        canonicalIndex[newKey] = newStored
+
+        // 2. 이어 쓴 짝: 뒤 단어 자리와 앞 단어 자리 모두 옮긴다.
+        for (from, var next) in model.bigrams {
+            guard let n = next.removeValue(forKey: oldStored) else { continue }
+            next[newStored, default: 0] += n
+            model.bigrams[from] = next
+        }
+        if oldKey != newKey, let moved = model.bigrams.removeValue(forKey: oldKey) {
+            var merged = model.bigrams[newKey] ?? [:]
+            for (word, n) in moved { merged[word, default: 0] += n }
+            model.bigrams[newKey] = merged
+        }
+
+        // 3. 직접 고친 단어는 규칙과 상관없이 남긴다.
+        model.manualWords.remove(oldKey)
+        model.manualWords.insert(newKey)
+    }
+
+    /// 앱 화면에 보여 줄 단어 목록 (원형, 쓴 횟수, 지금 순위 점수, 직접 넣었는지).
+    var wordList: [(word: String, count: Int, score: Double, isManual: Bool)] {
+        let tick = model.tick
+        return model.words.map { word, entry in
+            (word, entry.count, Self.decayedScore(entry, at: tick), isManual(word))
+        }
+    }
+
+    /// `word` 뒤에 이어 쓴 단어와 횟수 (많은 순).
+    func followers(of word: String) -> [(word: String, count: Int)] {
+        (model.bigrams[Self.normalized(word)] ?? [:])
+            .map { ($0.key, $0.value) }
+            .sorted { $0.1 != $1.1 ? $0.1 > $1.1 : $0.0 < $1.0 }
+    }
+
+    /// 직접 넣을 수 없는 단어면 그 까닭(화면에 그대로 보여 줌). 넣을 수 있으면 `nil`.
+    static func manualWordProblem(_ word: String) -> String? {
+        if word.isEmpty { return "단어를 입력해 주세요." }
+        if word.count > maxWordLength { return "\(maxWordLength)자까지 넣을 수 있습니다." }
+        if word.contains(where: { $0.isWhitespace }) {
+            return "띄어쓰기는 넣을 수 없습니다. 한 단어씩 넣어 주세요."
+        }
+        if let bad = word.first(where: { !isManualWordCharacter($0) }) {
+            return "「\(bad)」는 단어 안에 넣을 수 없습니다. 문장부호(. , ? ! ; :)·괄호·따옴표는 단어가 끝났다는 신호로 쓰입니다."
+        }
+        return nil
     }
 
     // MARK: - Stats (효과 측정)
@@ -259,7 +402,9 @@ final class PredictionEngine {
         }
 
         // 문장부호 등 단어가 될 수 없는 글자가 끼어 있으면 추천하지 않는다.
-        guard prefix.allSatisfy(Self.isWordCharacter) else { return [] }
+        // 숫자·기호가 든 앞부분은 직접 넣은 단어만 후보로 삼는다.
+        let manualOnly = !prefix.allSatisfy(Self.isWordCharacter)
+        guard !manualOnly || prefix.allSatisfy(Self.isManualWordCharacter) else { return [] }
         let prefixKey = Self.matchKey(for: prefix)
         guard !prefixKey.isEmpty else { return [] }
         let typed = Self.normalized(prefix)
@@ -267,6 +412,7 @@ final class PredictionEngine {
         var scored: [(String, Double)] = []
         for (word, entry) in model.words {
             guard entry.count >= Self.minUsesToSuggest,
+                  !manualOnly || isManual(word),
                   let key = keyCache[word], key.count > prefixKey.count,
                   key.hasPrefix(prefixKey),
                   Self.normalized(word) != typed else { continue }
@@ -277,6 +423,56 @@ final class PredictionEngine {
             .sorted(by: Self.byScoreThenWord)
             .prefix(limit)
             .map { Self.matchingCase(of: $0.0, to: prefix) }
+    }
+
+    // MARK: - Context parsing (직접 넣은 단어까지 보는 판)
+    //
+    // 저절로 배우기는 지금처럼 글자만 단어로 읽는다(아래 static 판). 직접 넣은 단어에는 숫자·기호가
+    // 들어갈 수 있으므로("3층", "A-4"), 넓게 읽은 토큰이 직접 넣은 단어(또는 그 앞부분)일 때만 넓은
+    // 쪽을 쓴다. 그 밖에는 static 판과 결과가 같다 — 전화번호·인증번호는 여전히 배우지 않는다.
+
+    /// 추천에 쓸 (앞 단어, 입력 중인 단어). 입력 중인 단어가 숫자·기호를 품은 직접 넣은 단어의
+    /// 앞부분이면 그 넓은 토큰을, 아니면 `currentContext(in:)` 과 같다. 추천을 고를 때 지울 길이도 이것.
+    func suggestionContext(in before: String) -> (previous: String?, current: String) {
+        let narrow = Self.currentContext(in: before)
+        let broad = Self.trailingToken(of: Substring(before), where: Self.isManualWordCharacter)
+        guard broad.count > narrow.current.count, hasManualWord(withPrefix: broad) else { return narrow }
+        let rest = before.dropLast(broad.count)
+        return (manualAwarePreviousWord(in: rest), broad)
+    }
+
+    /// 방금 끝낸 단어. 넓게 읽은 토큰이 직접 넣은 단어면 그것을, 아니면 `completedWord(in:)` 과 같다.
+    func completedWordConsideringManual(in before: String) -> (word: String, previous: String?, signature: String)? {
+        if let last = before.last, !Self.isManualWordCharacter(last) {
+            let trimmed = String(before.reversed().drop(while: { !Self.isManualWordCharacter($0) }).reversed())
+            let broad = Self.trailingToken(of: Substring(trimmed), where: Self.isManualWordCharacter)
+            if !broad.isEmpty, isManual(broad) {
+                let rest = trimmed.dropLast(broad.count)
+                return (broad, manualAwarePreviousWord(in: rest), trimmed)
+            }
+        }
+        return Self.completedWord(in: before)
+    }
+
+    private func manualAwarePreviousWord(in rest: Substring) -> String? {
+        let gap = rest.reversed().prefix(while: { !Self.isManualWordCharacter($0) })
+        if !gap.isEmpty, gap.allSatisfy({ $0 == " " }) {
+            let broad = Self.trailingToken(of: rest.dropLast(gap.count), where: Self.isManualWordCharacter)
+            if !broad.isEmpty, isManual(broad) { return broad }
+        }
+        return Self.previousWord(in: rest)
+    }
+
+    private func hasManualWord(withPrefix prefix: String) -> Bool {
+        let key = Self.matchKey(for: prefix)
+        return model.manualWords.contains { manual in
+            guard let stored = canonicalIndex[manual], let storedKey = keyCache[stored] else { return false }
+            return storedKey.hasPrefix(key) && storedKey.count > key.count
+        }
+    }
+
+    private static func trailingToken(of text: Substring, where isPart: (Character) -> Bool) -> String {
+        String(text.reversed().prefix(while: isPart).reversed())
     }
 
     // MARK: - Context parsing
@@ -307,7 +503,7 @@ final class PredictionEngine {
     }
 
     /// `rest` 끝의 단어. 사이에 공백만 있을 때만 앞 단어로 인정한다.
-    private static func previousWord(in rest: Substring) -> String? {
+    fileprivate static func previousWord(in rest: Substring) -> String? {
         let gap = rest.reversed().prefix(while: { !isWordCharacter($0) })
         guard !gap.isEmpty, gap.allSatisfy({ $0 == " " }) else { return nil }
         let beforeGap = rest.dropLast(gap.count)
@@ -316,6 +512,18 @@ final class PredictionEngine {
     }
 
     // MARK: - Rules
+
+    /// 직접 넣은 단어 안에 들어갈 수 있는 기호. 띄어쓰기와 문장부호(. , ? ! ; :)·괄호·따옴표는
+    /// 단어가 끝났다는 신호(학습 · 저절로 띈 뒤 붙이기 · 단축어)로 쓰이므로 뺀다 (사용자 결정 2026-11-12).
+    static let manualWordSymbols: Set<Character> = [
+        "-", "_", "/", "&", "@", "#", "%", "+", "=", "*", "~", "^", "$", "|", "\\",
+        "₩", "€", "£", "¥", "°", "·",
+    ]
+
+    /// 직접 넣은 단어를 이루는 글자: 단어 글자 + 숫자 + `manualWordSymbols`.
+    static func isManualWordCharacter(_ character: Character) -> Bool {
+        isWordCharacter(character) || character.isNumber || manualWordSymbols.contains(character)
+    }
 
     /// 단어를 이루는 글자: 한글(음절·자모), 영문 등 문자와 아포스트로피(don't).
     /// 숫자는 단어로 치지 않는다 — 전화번호·카드번호·인증번호를 학습하지 않기 위해서다.

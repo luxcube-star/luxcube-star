@@ -229,7 +229,7 @@ enum SettingsCatalog {
             title: "단어 추천 · 입력 학습",
             icon: "text.badge.star",
             destination: .inputBehavior,
-            keywords: ["추천", "예측", "자동완성", "완성", "학습", "단어", "후보", "다음단어", "제안"]
+            keywords: ["추천", "예측", "자동완성", "완성", "학습", "단어", "후보", "다음단어", "제안", "학습한 단어", "단어 목록", "단어 넣기"]
         ),
         SettingsEntry(
             title: "괄호 자동 닫기 · 더블 스페이스 마침표",

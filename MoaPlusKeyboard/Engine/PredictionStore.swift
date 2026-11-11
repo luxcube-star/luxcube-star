@@ -60,10 +60,50 @@ enum PredictionStore {
     }
 
     /// 접근할 수 있는 저장 파일을 모두 지운다 (메인 앱의 "학습 데이터 지우기").
+    /// 아직 키보드가 반영하지 않은 편집 요청도 함께 지운다 — 키보드는 지우기를 반영하며 편집 번호를
+    /// 0 으로 돌리므로 다음 요청은 1 번부터 다시 쓴다.
     static func deleteAll() {
-        for url in [sharedFileURL, localFileURL].compactMap({ $0 }) {
+        for url in [sharedFileURL, localFileURL, editsFileURL].compactMap({ $0 }) {
             try? FileManager.default.removeItem(at: url)
         }
+    }
+
+    // MARK: - 편집 요청 (메인 앱 「학습한 단어」 화면 → 키보드)
+
+    static let editsFileName = "prediction-edits.json"
+
+    /// 편집 요청 파일. 앱과 키보드가 함께 보는 App Group 에만 둔다 — 키보드의 "전체 접근 허용"이
+    /// 꺼져 있으면 키보드가 읽지 못한다.
+    static var editsFileURL: URL? {
+        FileManager.default
+            .containerURL(forSecurityApplicationGroupIdentifier: KeyboardSettings.appGroupId)?
+            .appendingPathComponent(editsFileName)
+    }
+
+    /// 쌓인 편집 요청. 없거나 읽지 못하면 빈 배열.
+    static func loadEdits() -> [PredictionEditRequest] {
+        guard let url = editsFileURL,
+              let data = try? Data(contentsOf: url),
+              let edits = try? JSONDecoder().decode([PredictionEditRequest].self, from: data) else { return [] }
+        return edits
+    }
+
+    /// 앱이 편집 요청 하나를 남긴다. 번호는 쌓인 요청과 키보드가 저장해 둔 반영 번호 중 큰 것 + 1.
+    /// 키보드가 이미 반영해 저장한 요청은 이때 걸러 파일이 끝없이 커지지 않게 한다.
+    /// - Returns: 저장했으면 `true` (App Group 을 쓸 수 없으면 `false`).
+    @discardableResult
+    static func appendEdit(_ edit: PredictionEdit) -> Bool {
+        guard let url = editsFileURL else { return false }
+        let applied: Int = {
+            guard let shared = sharedFileURL, case .loaded(let model) = read(shared) else { return 0 }
+            return model.appliedEditId
+        }()
+        var edits = loadEdits()
+        let nextId = max(edits.map(\.id).max() ?? 0, applied) + 1
+        edits.removeAll { $0.id <= applied }
+        edits.append(PredictionEditRequest(id: nextId, edit: edit))
+        guard let data = try? JSONEncoder().encode(edits) else { return false }
+        return write(data, to: url)
     }
 
     private enum ReadResult {

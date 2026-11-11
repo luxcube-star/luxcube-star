@@ -119,6 +119,7 @@ class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedback {
         viewModel.canSwitchInputMode = needsInputModeSwitchKey
         // 빈 필드로 새로 열렸을 때는 textDidChange 가 아직 한 번도 불리지 않는다.
         viewModel.refreshAutoCapitalization()
+        viewModel.applyPendingPredictionEdits()
         viewModel.schedulePredictionRefresh()
     }
 
@@ -288,6 +289,8 @@ class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedback {
             // (`KeyboardHostActiveReloadTests`).
             if self?.hasFullAccess == true {
                 KeyboardSettings.shared.loadAll()
+                // 그사이 앱 「학습한 단어」 화면에서 고친 것도 반영한다.
+                self?.viewModel.applyPendingPredictionEdits()
             }
             self?.recoverTouchDelivery()
         }

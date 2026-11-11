@@ -250,6 +250,139 @@ final class PredictionEngineTests: XCTestCase {
         XCTAssertEqual(PredictionEngine.completedWord(in: "안녕 ")?.signature,
                        PredictionEngine.completedWord(in: "안녕. ")?.signature)
     }
+
+    // MARK: - 직접 넣은 단어 · 앱 편집 요청 (「학습한 단어」 화면, 2026-11-12)
+
+    private func edits(_ list: [PredictionEdit], from start: Int = 1) -> [PredictionEditRequest] {
+        list.enumerated().map { PredictionEditRequest(id: start + $0.offset, edit: $0.element) }
+    }
+
+    func testAddEdit_suggestsRightAway() {
+        let engine = PredictionEngine()
+        XCTAssertTrue(engine.apply(edits: edits([.add("감정평가사")])))
+        XCTAssertEqual(engine.model.words["감정평가사"]?.count, 2, "넣자마자 추천되도록 두 번 쓴 것으로 친다")
+        XCTAssertTrue(engine.isManual("감정평가사"))
+        XCTAssertEqual(engine.suggestions(prefix: "감", previous: nil), ["감정평가사"])
+    }
+
+    func testAddEdit_keepsJamoWordThatAutoLearningWouldDrop() {
+        let engine = PredictionEngine()
+        engine.apply(edits: edits([.add("ㅇㅋ")]))
+        XCTAssertEqual(engine.suggestions(prefix: "ㅇ", previous: nil), ["ㅇㅋ"])
+        // 다시 읽어도(키보드를 새로 띄워도) 규칙 정리에 지워지지 않는다. 직접 넣지 않은 자모 단어는 지운다.
+        var model = engine.model
+        model.words["ㅎㅎ"] = PredictionWordEntry(count: 3, lastUsed: 0)
+        let reloaded = PredictionEngine(model: model)
+        XCTAssertNotNil(reloaded.model.words["ㅇㅋ"])
+        XCTAssertNil(reloaded.model.words["ㅎㅎ"])
+    }
+
+    func testDigitWord_onlyWhenAddedByHand() {
+        let engine = PredictionEngine()
+        engine.apply(edits: edits([.add("3층")]))
+        let context = engine.suggestionContext(in: "회의는 3")
+        XCTAssertEqual(context.current, "3")
+        XCTAssertEqual(context.previous, "회의는")
+        XCTAssertEqual(engine.suggestions(prefix: context.current, previous: context.previous), ["3층"])
+        // 직접 넣은 단어로 끝내면 쓴 횟수가 오른다.
+        let completed = engine.completedWordConsideringManual(in: "회의는 3층 ")
+        XCTAssertEqual(completed?.word, "3층")
+        XCTAssertTrue(engine.learn(word: "3층", previous: completed?.previous))
+        XCTAssertEqual(engine.model.words["3층"]?.count, 3)
+        // 숫자는 여전히 저절로 배우지 않는다 (전화번호·인증번호).
+        XCTAssertFalse(engine.learn(word: "01012345678", previous: nil))
+        XCTAssertFalse(engine.learn(word: "5층", previous: nil))
+        XCTAssertEqual(engine.suggestionContext(in: "번호 010").current, "", "직접 넣은 단어가 아니면 예전처럼 글자만 읽는다")
+    }
+
+    func testManualAwareParsing_matchesOldParsingForOrdinaryText() {
+        let engine = PredictionEngine()
+        engine.apply(edits: edits([.add("A-4")]))
+        for text in ["오늘 감정", "오늘 감정 ", "끝. 다음", "안녕~ ", "(안녕", "3층 "] {
+            let new = engine.suggestionContext(in: text)
+            let old = PredictionEngine.currentContext(in: text)
+            XCTAssertEqual(new.current, old.current, text)
+            XCTAssertEqual(new.previous, old.previous, text)
+            XCTAssertEqual(engine.completedWordConsideringManual(in: text)?.signature,
+                           PredictionEngine.completedWord(in: text)?.signature, text)
+        }
+        XCTAssertEqual(engine.completedWordConsideringManual(in: "A-4 ")?.word, "A-4")
+    }
+
+    func testRenameEdit_carriesCountsAndPairs() {
+        let engine = PredictionEngine()
+        engine.learn("감정평가서", times: 3)
+        engine.learn(word: "작성", previous: "감정평가서")
+        engine.learn(word: "감정평가서", previous: "검토")
+        engine.apply(edits: edits([.rename(from: "감정평가서", to: "감정평가사")]))
+        XCTAssertNil(engine.model.words["감정평가서"])
+        XCTAssertEqual(engine.model.words["감정평가사"]?.count, 4)
+        XCTAssertEqual(engine.followers(of: "감정평가사").first?.word, "작성", "앞 단어 자리도 옮긴다")
+        XCTAssertEqual(engine.followers(of: "검토").first?.word, "감정평가사", "뒤 단어 자리도 옮긴다")
+        XCTAssertTrue(engine.isManual("감정평가사"))
+        XCTAssertEqual(engine.suggestions(prefix: "감정", previous: nil), ["감정평가사"])
+    }
+
+    func testRenameEdit_mergesIntoExistingWord() {
+        let engine = PredictionEngine()
+        engine.learn("감사함니다", times: 2)
+        engine.learn("감사합니다", times: 3)
+        engine.apply(edits: edits([.rename(from: "감사함니다", to: "감사합니다")]))
+        XCTAssertNil(engine.model.words["감사함니다"])
+        XCTAssertEqual(engine.model.words["감사합니다"]?.count, 5)
+    }
+
+    func testDeleteEdit_forgetsWordAndManualMark() {
+        let engine = PredictionEngine()
+        engine.apply(edits: edits([.add("A-4"), .delete("A-4")]))
+        XCTAssertNil(engine.model.words["A-4"])
+        XCTAssertFalse(engine.isManual("A-4"))
+    }
+
+    func testApplyEdits_onlyNewOnesInOrder() {
+        let engine = PredictionEngine()
+        engine.apply(edits: edits([.add("가나다")]))
+        engine.forget(word: "가나다")
+        XCTAssertFalse(engine.apply(edits: edits([.add("가나다")])), "이미 반영한 번호는 다시 반영하지 않는다")
+        XCTAssertNil(engine.model.words["가나다"])
+        engine.apply(edits: edits([.add("가나다"), .delete("가나다"), .add("라마바")], from: 1))
+        XCTAssertNil(engine.model.words["가나다"])
+        XCTAssertNotNil(engine.model.words["라마바"])
+        XCTAssertEqual(engine.model.appliedEditId, 3)
+        engine.reset(appliedResetToken: "t")
+        XCTAssertEqual(engine.model.appliedEditId, 0, "지우기 뒤 편집 요청은 1 번부터 다시 온다")
+    }
+
+    func testManualWordProblem() {
+        XCTAssertNil(PredictionEngine.manualWordProblem("A-4"))
+        XCTAssertNil(PredictionEngine.manualWordProblem("ㅇㅋ"))
+        XCTAssertNil(PredictionEngine.manualWordProblem("3층"))
+        XCTAssertNotNil(PredictionEngine.manualWordProblem(""))
+        XCTAssertNotNil(PredictionEngine.manualWordProblem("수고 많으셨습니다"))
+        XCTAssertNotNil(PredictionEngine.manualWordProblem("감사합니다."))
+        XCTAssertNotNil(PredictionEngine.manualWordProblem("(주)"))
+        XCTAssertNotNil(PredictionEngine.manualWordProblem(String(repeating: "가", count: 31)))
+        let engine = PredictionEngine()
+        XCTAssertFalse(engine.apply(edits: []))
+        engine.apply(edits: edits([.add("감사합니다.")]))
+        XCTAssertNil(engine.model.words["감사합니다."], "넣을 수 없는 단어는 요청이 와도 넣지 않는다")
+    }
+
+    func testModelCodable_keepsManualWordsAndEditId() throws {
+        let engine = PredictionEngine()
+        engine.apply(edits: edits([.add("A-4")]))
+        let data = try JSONEncoder().encode(engine.model)
+        let decoded = try JSONDecoder().decode(PredictionModel.self, from: data)
+        XCTAssertEqual(decoded.manualWords, ["a-4"])
+        XCTAssertEqual(decoded.appliedEditId, 1)
+        let old = try JSONDecoder().decode(PredictionModel.self, from: Data(#"{"version":2,"words":{}}"#.utf8))
+        XCTAssertTrue(old.manualWords.isEmpty)
+        XCTAssertEqual(old.appliedEditId, 0)
+        let request = try JSONDecoder().decode(
+            [PredictionEditRequest].self,
+            from: JSONEncoder().encode([PredictionEditRequest(id: 1, edit: .rename(from: "가", to: "나"))]))
+        XCTAssertEqual(request.first?.edit, .rename(from: "가", to: "나"))
+    }
 }
 
 private extension PredictionEngine {
