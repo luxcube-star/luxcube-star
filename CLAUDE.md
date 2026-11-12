@@ -738,6 +738,8 @@ v2.2.5 까지 ↗/↘ 를 꺼도 ㅣ/ㅡ 가 들어갔다 — `normalizedDirecti
   `discardHeldPredictionIfJustCompleted`) 오타로 보고 버린다. 다음 단어를 고치는 백스페이스는 앞 단어와 상관없다
   (`KeyboardViewModelPredictionTests`). 서명 비교를 백스페이스 **전에** 해야 한다 — 지운 뒤에는 문맥이 달라진다.
 - **두 번 쓴 단어만 추천한다** (`minUsesToSuggest = 2`, 단어 완성·다음 단어 공통). 쓴 횟수 `count` 는 줄지 않는다.
+- **추천은 4칸, 칸 폭은 단어 길이에 맞춘다** (`defaultLimit = 4`, 사용자 결정 2026-11-13). 똑같이 나누면 4칸에서 「감정평가법인」이 잘린다.
+  `PredictionBarLayout.widths` 하나가 정한다 — 다 들어가면 제 폭 + 남는 폭 똑같이, 모자라면 짧은 칸은 그대로 두고 긴 칸만 같은 상한으로 줄임 (`PredictionBarLayoutTests`).
 - **순위 점수는 감쇠한다** (`score`, 반감기 `halfLife = 3000` 단어 — 시계가 아니라 배운 단어 수 `tick`).
   쓸 때 `decayedScore + 1`. 정리(5,000개 초과)도 감쇠 점수로. 반감기 값은 사용자 결정(2026-11-11).
 - 낱자모가 든 단어("안ㄴ", "ㅇㅋ", "ㅋㅋ")는 배우지 않는다(사용자 결정). 같은 글자가 이어진 완성 글자("아아아")는 배운다.

@@ -78,7 +78,7 @@ final class PredictionEngineTests: XCTestCase {
         for word in ["가가", "가나", "가다", "가라", "가마"] {
             engine.learn(word, times: 2)
         }
-        XCTAssertEqual(engine.suggestions(prefix: "가", previous: nil).count, 3)
+        XCTAssertEqual(engine.suggestions(prefix: "가", previous: nil).count, 4)
     }
 
     // MARK: - 감쇠 (반감기)

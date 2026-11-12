@@ -147,8 +147,8 @@ final class PredictionEngine {
     static let maxNextWordsPerWord = 20
     /// 이보다 긴 토큰은 단어가 아니라 붙여넣은 문장·주소 등으로 보고 학습하지 않는다.
     static let maxWordLength = 30
-    /// 추천 바에 보여 줄 후보 수.
-    static let defaultLimit = 3
+    /// 추천 바에 보여 줄 후보 수. (사용자 결정 2026-11-13: 3 → 4, 칸 폭은 단어 길이에 맞춤 — `PredictionBarLayout`)
+    static let defaultLimit = 4
     /// 이만큼 써 본 단어만 추천한다. 한 번 잘못 친 오타가 추천에 뜨지 않게 한다 — 배우기는
     /// 처음부터 하고 보여 주기만 미룬다 (Grammarly 키보드의 "trust-but-verify" 와 같은 생각).
     static let minUsesToSuggest = 2
