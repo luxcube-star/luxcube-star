@@ -772,6 +772,7 @@ v2.2.5 까지 ↗/↘ 를 꺼도 ㅣ/ㅡ 가 들어갔다 — `normalizedDirecti
 - 하지 않는 때: 설정 OFF(`autoSpaceOnPauseEnabled`, 기본 ON) · 한글 모드 아님 · 맨 끝이 한글 아님 · 천지인 ㆍ 조합 중 · 커서 뒤 같은 줄에 글 있음 · `hostAllowsLearning()` false(이메일 · 주소 · 전화 · 비밀번호 · 인증번호).
 - 백스페이스 → `autoSpacePausedByBackspace`. 직접 스페이스 · 엔터 · 추천 고르기로 풀린다.
 - 저절로 띈 바로 뒤 `. , ? !` 는 그 공백을 지우고 붙인다(`inputSymbol`). 바로 뒤 스페이스는 지금처럼 마침표 단축(사용자 결정).
+- **추천 고르기가 붙인 공백도 같다** (개선 방안 9번, 사용자 결정 2026-11-13): `acceptPrediction` 이 `autoSpaceJustInserted` 를 세운다 — 이름과 달리 "바로 뒤 문장부호를 붙여도 되는 공백" 표시. 직접 친 스페이스 · 다른 입력 · 커서 이동(`moveCursor`)이 끈다 (`KeyboardViewModelPredictionTests.testAcceptPrediction_then*`).
 
 ### 커서 이동 / 약어 리셋 패턴
 ```swift

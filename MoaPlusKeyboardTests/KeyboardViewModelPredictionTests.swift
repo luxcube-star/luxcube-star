@@ -157,6 +157,47 @@ final class KeyboardViewModelPredictionTests: XCTestCase {
         XCTAssertEqual(delegate.text, "감사 드립니다 ")
     }
 
+    // MARK: - 추천 고른 뒤 문장부호 붙이기 (개선 방안 9번)
+
+    func testAcceptPrediction_thenPunctuation_attachesToWord() {
+        for mark in ["?", ".", ",", "!"] {
+            delegate.text = "감사합"
+            viewModel.acceptPrediction("감사합니다")
+            viewModel.inputSymbol(mark)
+            XCTAssertEqual(delegate.text, "감사합니다" + mark, "추천이 붙인 공백은 지우고 붙인다 (\(mark))")
+        }
+    }
+
+    func testAcceptPrediction_thenSpaceThenPunctuation_keepsUserSpace() {
+        delegate.text = "감사합"
+        viewModel.acceptPrediction("감사합니다")
+        viewModel.inputSpace()
+        viewModel.inputSymbol("?")
+        XCTAssertTrue(delegate.text.hasSuffix(" ?"), "직접 친 스페이스 뒤는 지우지 않는다: \(delegate.text)")
+    }
+
+    func testAcceptPrediction_thenLetterThenPunctuation_doesNotEatSpace() {
+        delegate.text = "감사 "
+        viewModel.acceptPrediction("드립니다")
+        typeGa()
+        viewModel.inputSymbol("?")
+        XCTAssertEqual(delegate.text, "감사 드립니다 가?")
+    }
+
+    func testAcceptPrediction_thenOtherSymbol_keepsSpace() {
+        delegate.text = "감사합"
+        viewModel.acceptPrediction("감사합니다")
+        viewModel.inputSymbol("~")
+        XCTAssertEqual(delegate.text, "감사합니다 ~", ". , ? ! 밖의 기호는 그대로")
+    }
+
+    func testAcceptPrediction_thenCursorMove_doesNotAttach() {
+        delegate.text = "감사합"
+        viewModel.acceptPrediction("감사합니다")
+        viewModel.moveCursor(by: -1)
+        XCTAssertFalse(viewModel.autoSpaceJustInserted, "커서를 옮기면 붙이기를 끈다")
+    }
+
     func testForgetPrediction_removesWord() {
         engine.learn(word: "오타단어", previous: nil)
         viewModel.forgetPrediction("오타단어")

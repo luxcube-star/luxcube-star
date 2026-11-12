@@ -795,7 +795,8 @@ class KeyboardViewModel: ObservableObject {
         pendingPredictionLearn = true
         let resolved = shiftedSymbolIfNeeded(symbol)
         commitCurrent()
-        // 저절로 띈 바로 뒤의 문장부호는 그 공백을 지우고 붙인다 ("감사합니다 " + "." → "감사합니다.").
+        // 저절로 띈 공백 · 추천 고르기가 붙인 공백 바로 뒤의 문장부호는 그 공백을 지우고 붙인다
+        // ("감사합니다 " + "." → "감사합니다."). 직접 친 스페이스 뒤는 그대로 (개선 방안 9번).
         if autoSpaceJustInserted, Self.punctuationAttachingToWord.contains(resolved),
            delegate?.textBeforeCursor()?.hasSuffix(" ") == true {
             delegate?.deleteBackward()
@@ -1060,6 +1061,7 @@ class KeyboardViewModel: ObservableObject {
     func moveCursor(by offset: Int) {
         typoMarkPending = false
         guard offset != 0 else { return }
+        autoSpaceJustInserted = false
         // Freeze any in-progress composition at its current screen position.
         // commitCurrent() clears internal state without touching the proxy.
         commitCurrent()
@@ -1668,6 +1670,8 @@ class KeyboardViewModel: ObservableObject {
             delegate?.deleteBackward()
         }
         delegate?.insertText(PredictionEngine.matchingCase(of: word, to: current) + " ")
+        // 바로 뒤 . , ? ! 는 이 공백을 지우고 붙인다 (개선 방안 9번, 사용자 결정 2026-11-13).
+        autoSpaceJustInserted = true
         predictionEngine.recordAccepted(word: word, typed: current)
         predictionStatsDirty = true
         pendingPredictionLearn = true
@@ -1735,13 +1739,14 @@ class KeyboardViewModel: ObservableObject {
 
     /// 기다리는 시간(초). 사용자 결정 1초 고정. 테스트만 바꾼다.
     static var autoSpaceDelay: TimeInterval = 1.0
-    /// 저절로 띈 공백 뒤에 붙이는 문장부호.
+    /// 저절로 띈 공백 · 추천 고르기가 붙인 공백 뒤에 붙이는 문장부호.
     static let punctuationAttachingToWord: Set<String> = [".", ",", "?", "!"]
 
     private var autoSpaceWorkItem: DispatchWorkItem?
     /// 백스페이스 뒤 — 다음 단어로 넘어갈 때까지 저절로 띄지 않는다.
     private(set) var autoSpacePausedByBackspace = false
-    /// 방금 넣은 공백이 저절로 띈 것인지 (바로 뒤 문장부호를 붙이는 데 쓴다).
+    /// 방금 넣은 공백이 저절로 띈 것 또는 추천 고르기가 붙인 것인지 (바로 뒤 문장부호를 붙이는 데 쓴다).
+    /// 직접 친 스페이스 · 다른 입력 · 커서 이동은 끈다.
     private(set) var autoSpaceJustInserted = false
 
     private func scheduleAutoSpace() {
