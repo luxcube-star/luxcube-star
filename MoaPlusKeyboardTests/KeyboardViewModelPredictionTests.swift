@@ -157,6 +157,46 @@ final class KeyboardViewModelPredictionTests: XCTestCase {
         XCTAssertEqual(delegate.text, "감사 드립니다 ")
     }
 
+    // MARK: - 구절 (개선 방안 10번 넓힘)
+
+    func testTypedPhraseTwice_isSuggestedWhileTypingFirstWord() {
+        for _ in 0..<2 {
+            delegate.text = "수고"
+            viewModel.inputSpace()
+            viewModel.refreshPredictions()
+            delegate.text += "많으셨습니다"
+            viewModel.inputSpace()
+            viewModel.refreshPredictions()
+            delegate.text += "다음"
+            viewModel.refreshPredictions()
+            viewModel.inputReturn()
+            viewModel.refreshPredictions()
+            delegate.text = ""
+        }
+        delegate.text = "수"
+        viewModel.refreshPredictions()
+        XCTAssertTrue(viewModel.predictionSuggestions.contains("수고 많으셨습니다"), "\(viewModel.predictionSuggestions)")
+    }
+
+    func testAcceptPhrase_insertsWholePhraseAndCountsWords() {
+        engine.apply(edits: [PredictionEditRequest(id: 1, edit: .addPhrase("수고 많으셨습니다"))])
+        delegate.text = "네 수"
+        viewModel.acceptPrediction("수고 많으셨습니다")
+        XCTAssertEqual(delegate.text, "네 수고 많으셨습니다 ")
+        XCTAssertEqual(engine.model.words["수고"]?.count, 1, "안쪽 단어는 고를 때 센다")
+        viewModel.refreshPredictions()
+        delegate.text += "다"
+        viewModel.refreshPredictions()
+        XCTAssertEqual(engine.model.words["많으셨습니다"]?.count, 1, "마지막 단어는 직접 친 단어처럼 보류했다 배운다")
+        XCTAssertEqual(engine.model.phrases["수고 많으셨습니다"]?.count, 3, "직접 넣은 2 + 고른 1")
+    }
+
+    func testForgetPrediction_phrase() {
+        engine.apply(edits: [PredictionEditRequest(id: 1, edit: .addPhrase("수고 많으셨습니다"))])
+        viewModel.forgetPrediction("수고 많으셨습니다")
+        XCTAssertTrue(engine.model.phrases.isEmpty)
+    }
+
     // MARK: - 추천 고른 뒤 문장부호 붙이기 (개선 방안 9번)
 
     func testAcceptPrediction_thenPunctuation_attachesToWord() {

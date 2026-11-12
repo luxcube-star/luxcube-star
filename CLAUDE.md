@@ -749,7 +749,7 @@ v2.2.5 까지 ↗/↘ 를 꺼도 ㅣ/ㅡ 가 들어갔다 — `normalizedDirecti
   개발자 리포트 "단어 추천" 줄. 단어는 담지 않는다.
 - 추천 선택은 조합 상태를 버리고(`commitCurrent` 아님 — 약어 엔진에 흘리지 않기 위해) 화면의 입력 중 단어를 지운 뒤 단어 + 스페이스.
 - 저장은 App Group 파일 우선, 실패하면 익스텐션 로컬. 로컬 파일을 읽지 못하면(기기 보호) 저장을 막아 덮어쓰기를 피한다.
-- **「학습한 단어」 화면 (새모아, 2026-11-12 사용자 결정)** `MoaPlus/Settings/PredictionWordsView.swift`. 앱은 학습 파일을
+- **「학습 내용」 화면 (새모아, 2026-11-12 「학습한 단어」로 만듦 · 2026-11-13 구절을 더하며 이름 바꿈)** `MoaPlus/Settings/PredictionWordsView.swift`. 앱은 학습 파일을
   **직접 고치지 않는다** — 키보드가 모델을 메모리에 들고 있다가 통째로 덮어써 지워진다. 앱은 `PredictionStore.appendEdit`
   로 App Group `prediction-edits.json` 에 번호 붙은 요청(`PredictionEditRequest`: add / delete / rename)을 남기고, 키보드가
   `viewWillAppear`·호스트 복귀(전체 접근 ON)에서 `applyPendingPredictionEdits()` 로 **지우기 토큰을 먼저** 반영한 뒤
@@ -760,6 +760,14 @@ v2.2.5 까지 ↗/↘ 를 꺼도 ㅣ/ㅡ 가 들어갔다 — `normalizedDirecti
   넓게 읽은 토큰이 **직접 넣은 단어(의 앞부분)일 때만** 넓게, 그 밖에는 static `currentContext`/`completedWord` 와 같다
   (숫자는 여전히 저절로 배우지 않음). 직접 넣은 "A-4" 를 치는 도중 "A-" 에서 보류된 "A" 는 버린다(`isManualWordAbsorbing`).
   문장부호(. , ? ! ; :)·괄호·따옴표·띄어쓰기는 단어 끝 신호라 넣을 수 없다(`manualWordProblem`).
+- **앞 두 단어 · 구절 (개선 방안 8번 · 10번 넓힘, 2026-11-13 사용자 결정 1나 · 2가 · 3)**: 판 4. `learn(word:previous:precedingWords:)` 의
+  `precedingWords`(같은 문장에서 띄어 쓴 앞 단어들, 먼 것 → 가까운 것, 3개까지 — 뷰모델이 보류 단어의 서명에서 `precedingWords(in:max:)` 로 읽음)로
+  `trigrams`(앞 두 단어 → 다음 단어, 묶음마다 10개 · 3,000 묶음)와 `phrases`(2~4단어 구절, 2,000개, **단어와 따로** 셈)를 배운다.
+  배울 수 없는 단어(낱자모 등)에서 사슬이 끊긴다. 다음 단어는 앞 두 단어가 맞는 것 먼저, 남은 칸은 앞 한 단어로. 구절은 입력 중인 단어로
+  시작하면 **4칸 중 2칸까지 · 단어 뒤에**(`maxPhraseSuggestions`), 2번 쓴 뒤. 구절을 고르면 안쪽 단어는 `learnInnerWords` 가 바로 세고
+  마지막 단어는 직접 친 것처럼 보류했다 배운다. 단어를 잊으면 그 단어가 든 구절 · 묶음도 지운다(직접 넣은 구절은 남김). 판 3 파일은
+  두 번 넘게 이어 쓴 단어 짝을 두 단어 구절로 한 번 옮긴다(`backfillPhrases`). 앱 화면 이름은 「학습 내용」(단어 | 구절), 편집 요청
+  `addPhrase` · `deletePhrase` · `renamePhrase` (`PredictionPhraseTests`)
 - **조사 나눠 배우기 (개선 방안 6번, 2026-11-12 사용자 결정 1가 · 2가 · 3가)**: `learn` 끝에서 `creditStem` — 배운 단어가
   `josaSplit`(끝에 맞는 **가장 긴 조사 하나만**, 받침 맞음 `josaFits`, 앞부분 두 글자 이상 · `isLearnable`)이면 조사를
   `model.stemEvidence` 에 모으고, 앞부분이 이미 단어로 있거나 조사가 두 가지 이상일 때 앞부분을 한 번 쓴 것으로 센다(조사 꼴도

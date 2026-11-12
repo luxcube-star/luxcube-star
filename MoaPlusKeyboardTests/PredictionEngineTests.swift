@@ -193,7 +193,7 @@ final class PredictionEngineTests: XCTestCase {
         let data = try JSONEncoder().encode(engine.model)
         let decoded = try JSONDecoder().decode(PredictionModel.self, from: data)
         XCTAssertEqual(decoded, engine.model)
-        XCTAssertEqual(decoded.version, 3)
+        XCTAssertEqual(decoded.version, 4)
         XCTAssertEqual(PredictionEngine(model: decoded).suggestions(prefix: "드", previous: nil), ["드립니다"])
     }
 
@@ -227,7 +227,7 @@ final class PredictionEngineTests: XCTestCase {
         XCTAssertEqual(engine.model.stats.accepted, 2)
         XCTAssertEqual(engine.model.stats.savedCharacters, 3 + 4)
         XCTAssertEqual(engine.diagnosticLine,
-                       "배운 단어 1개(추천 가능 1개) / 추천 보여 줌 1번 / 고름 2번 / 아낀 글자 7자")
+                       "배운 단어 1개(추천 가능 1개) / 구절 0개 / 추천 보여 줌 1번 / 고름 2번 / 아낀 글자 7자")
     }
 
     // MARK: - 문맥 해석
@@ -450,7 +450,7 @@ final class PredictionEngineTests: XCTestCase {
         let engine = PredictionEngine(model: old)
         XCTAssertEqual(engine.model.words["감정평가"]?.count, 2, "이미 배운 조사 꼴의 횟수를 앞부분에 센다")
         XCTAssertNil(engine.model.words["고양"])
-        XCTAssertEqual(engine.model.version, 3)
+        XCTAssertEqual(engine.model.version, 4)
         XCTAssertEqual(PredictionEngine(model: engine.model).model.words["감정평가"]?.count, 2, "한 번만 한다")
     }
 }

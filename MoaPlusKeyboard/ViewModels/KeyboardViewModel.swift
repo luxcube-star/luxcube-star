@@ -1596,8 +1596,11 @@ class KeyboardViewModel: ObservableObject {
         }
         applyPredictionResetIfNeeded(token: settings.predictionResetToken)
         let context = predictionEngine.suggestionContext(in: before)
+        // 앞 두 단어 (개선 방안 8번): previous 바로 앞 단어도 함께 넘긴다.
+        let earlier = predictionEngine.precedingWords(in: Substring(before).dropLast(context.current.count), max: 2)
         setPredictionSuggestions(
-            predictionEngine.suggestions(prefix: context.current, previous: context.previous))
+            predictionEngine.suggestions(prefix: context.current, previous: context.previous,
+                                         beforePrevious: earlier.count == 2 ? earlier[0] : nil))
     }
 
     /// 방금 끝난 단어를 바로 배우지 않고 보류한다. 앞에 보류한 단어가 있으면 그것을 먼저 배운다.
@@ -1619,7 +1622,7 @@ class KeyboardViewModel: ObservableObject {
         return !completed.signature.dropFirst(held.signature.count).contains(where: { $0.isWhitespace })
     }
 
-    /// 메인 앱 「학습한 단어」 화면에서 넣고·고치고·지운 것을 반영한다. 키보드가 뜰 때마다 부른다.
+    /// 메인 앱 「학습 내용」 화면에서 넣고·고치고·지운 것(단어 · 구절)을 반영한다. 키보드가 뜰 때마다 부른다.
     /// 지우기 요청을 먼저 반영한다 — 지운 뒤 넣은 단어가 늦게 온 지우기에 함께 지워지지 않게.
     func applyPendingPredictionEdits() {
         let settings = KeyboardSettings.shared
@@ -1637,7 +1640,10 @@ class KeyboardViewModel: ObservableObject {
         guard let held = heldPrediction else { return }
         heldPrediction = nil
         applyPredictionResetIfNeeded(token: KeyboardSettings.shared.predictionResetToken)
-        if predictionEngine.learn(word: held.word, previous: held.previous) {
+        // 같은 문장에서 앞에 띄어 쓴 단어들 — 앞 두 단어 · 구절을 배우는 데 쓴다.
+        let preceding = predictionEngine.precedingWords(
+            in: Substring(held.signature).dropLast(held.word.count), max: PredictionEngine.maxPhraseWords - 1)
+        if predictionEngine.learn(word: held.word, previous: held.previous, precedingWords: preceding) {
             schedulePredictionSave()
         }
     }
@@ -1652,14 +1658,17 @@ class KeyboardViewModel: ObservableObject {
         lastLearnedSignature = nil
     }
 
-    /// 추천 단어를 골랐다: 입력 중인 단어를 지우고 고른 단어 + 스페이스를 넣는다.
+    /// 추천 단어(또는 구절)를 골랐다: 입력 중인 단어를 지우고 고른 단어 + 스페이스를 넣는다.
+    /// 구절이면 마지막 단어를 뺀 안쪽 단어들을 여기서 배운다 — 마지막 단어는 직접 친 단어처럼 보류했다 배운다.
     func acceptPrediction(_ word: String) {
         cancelAutoSpace()
         autoSpaceJustInserted = false
         autoSpacePausedByBackspace = false
         guard !previewMode else { return }
         let before = delegate?.textBeforeCursor() ?? ""
-        let current = predictionEngine.suggestionContext(in: before).current
+        let context = predictionEngine.suggestionContext(in: before)
+        let current = context.current
+        if word.contains(" ") { learnInnerWords(ofPhrase: word, before: before, current: current) }
         // 조합 중인 글자는 이미 화면에 있고 `current` 에 포함돼 있다. 조합 상태만 버리고
         // 화면의 글자는 아래에서 함께 지운다 (`commitCurrent` 는 약어 엔진에 글자를
         // 흘려보내므로 쓰지 않는다).
@@ -1680,10 +1689,31 @@ class KeyboardViewModel: ObservableObject {
         schedulePredictionRefresh()
     }
 
-    /// 추천 단어를 길게 눌렀다: 학습 데이터에서 지운다.
+    /// 고른 구절의 안쪽 단어들(마지막 단어 제외)을 쓴 것으로 센다. 학습을 끈 때 · 막힌 입력란에서는 하지 않는다.
+    private func learnInnerWords(ofPhrase phrase: String, before: String, current: String) {
+        guard KeyboardSettings.shared.predictionLearningEnabled, delegate?.hostAllowsLearning() ?? true else { return }
+        let words = phrase.split(separator: " ").map(String.init)
+        guard words.count >= 2 else { return }
+        commitHeldPrediction()
+        var chain = predictionEngine.precedingWords(
+            in: Substring(before).dropLast(current.count), max: PredictionEngine.maxPhraseWords - 1)
+        var learned = false
+        for inner in words.dropLast() {
+            learned = predictionEngine.learn(word: inner, previous: chain.last, precedingWords: chain) || learned
+            chain.append(inner)
+            if chain.count > PredictionEngine.maxPhraseWords - 1 { chain.removeFirst() }
+        }
+        if learned { schedulePredictionSave() }
+    }
+
+    /// 추천 단어(구절)를 길게 눌렀다: 학습 데이터에서 지운다.
     func forgetPrediction(_ word: String) {
         guard !previewMode else { return }
-        predictionEngine.forget(word: word)
+        if word.contains(" ") {
+            predictionEngine.forget(phrase: word)
+        } else {
+            predictionEngine.forget(word: word)
+        }
         schedulePredictionSave()
         HapticManager.shared.playLongPress()
         refreshPredictions()

@@ -7,7 +7,10 @@ import Foundation
 //
 // 1. 단어 완성: 입력 중인 단어의 앞부분으로 시작하는, 전에 쓴 단어
 //    ("안녀" → "안녕하세요", "감정" → "감정평가서")
-// 2. 다음 단어: 방금 끝낸 단어 뒤에 자주 이어 쓴 단어 ("감사" 뒤 스페이스 → "드립니다")
+// 2. 다음 단어: 방금 끝낸 단어 뒤에 자주 이어 쓴 단어 ("감사" 뒤 스페이스 → "드립니다").
+//    앞 두 단어가 맞는 것을 먼저 띄운다 ("확인 후" 뒤 → "연락드리겠습니다", 개선 방안 8번)
+// 3. 구절: 띄어 쓴 2~4단어 묶음을 단어와 따로 배워, 첫 단어를 치는 중에 한 후보로 띄운다
+//    ("수고" → "수고 많으셨습니다", 개선 방안 10번 넓힘 · 사용자 결정 2026-11-13: 4칸 중 2칸까지 · 2번 쓴 뒤)
 //
 // 한글은 **자모 단위**로 비교한다. 모아키는 받침을 다음 글자의 초성으로 옮기기 전에
 // 한 번 앞 글자에 붙였다가 떼므로("가" + ㄴ → "간" → "가나"), 음절 단위로 비교하면
@@ -71,8 +74,9 @@ struct PredictionStats: Codable, Equatable {
 /// 판 2 (2026-11): 단어별 감쇠 점수(`score`)와 효과 측정(`stats`)을 더했다. 판 1 파일도 읽는다 —
 /// 모든 키를 `decodeIfPresent` 로 읽으므로 키가 하나 없다고 통째로 버려지지 않는다.
 /// 판 3 (2026-11-12): 직접 넣은 단어(`manualWords`) · 편집 번호(`appliedEditId`) · 조사 증거(`stemEvidence`).
+/// 판 4 (2026-11-13): 앞 두 단어(`trigrams`) · 구절(`phrases`) · 직접 넣은 구절(`manualPhrases`).
 struct PredictionModel: Codable, Equatable {
-    static let currentVersion = 3
+    static let currentVersion = 4
 
     var version: Int = PredictionModel.currentVersion
     /// 표시용 원형(입력한 그대로) → 통계.
@@ -95,11 +99,18 @@ struct PredictionModel: Codable, Equatable {
     /// 조사 나눠 배우기의 증거: 앞부분(소문자 정규형) → 그 뒤에 붙어 나온 조사들.
     /// 서로 다른 조사로 두 번 이상 나오면 앞부분을 단어로 친다 (`PredictionEngine.creditStem`).
     var stemEvidence: [String: [String]] = [:]
+    /// 앞 두 단어(각각 소문자 정규형, 공백 하나로 이음) → 뒤 단어(원형) → 이어 쓴 횟수.
+    var trigrams: [String: [String: Int]] = [:]
+    /// 구절(원형, 단어 사이 공백 하나, 2~4단어) → 통계. 단어(`words`)와 따로 센다.
+    var phrases: [String: PredictionWordEntry] = [:]
+    /// 앱 「학습 내용」 화면에서 직접 넣거나 고친 구절(소문자 정규형).
+    var manualPhrases: Set<String> = []
 
     init() {}
 
     private enum CodingKeys: String, CodingKey {
         case version, words, bigrams, tick, appliedResetToken, stats, manualWords, appliedEditId, stemEvidence
+        case trigrams, phrases, manualPhrases
     }
 
     init(from decoder: Decoder) throws {
@@ -113,6 +124,9 @@ struct PredictionModel: Codable, Equatable {
         manualWords = try c.decodeIfPresent(Set<String>.self, forKey: .manualWords) ?? []
         appliedEditId = try c.decodeIfPresent(Int.self, forKey: .appliedEditId) ?? 0
         stemEvidence = try c.decodeIfPresent([String: [String]].self, forKey: .stemEvidence) ?? [:]
+        trigrams = try c.decodeIfPresent([String: [String: Int]].self, forKey: .trigrams) ?? [:]
+        phrases = try c.decodeIfPresent([String: PredictionWordEntry].self, forKey: .phrases) ?? [:]
+        manualPhrases = try c.decodeIfPresent(Set<String>.self, forKey: .manualPhrases) ?? []
     }
 }
 
@@ -129,6 +143,12 @@ enum PredictionEdit: Codable, Equatable {
     case delete(String)
     /// 단어 글자를 고친다. 쓴 횟수·순위·이어 쓴 짝을 이어받는다.
     case rename(from: String, to: String)
+    /// 구절을 넣는다. 넣자마자 추천에 나온다.
+    case addPhrase(String)
+    /// 구절을 잊는다.
+    case deletePhrase(String)
+    /// 구절 글자를 고친다. 쓴 횟수 · 순위를 이어받는다.
+    case renamePhrase(from: String, to: String)
 }
 
 struct PredictionEditRequest: Codable, Equatable {
@@ -155,8 +175,25 @@ final class PredictionEngine {
     /// 반감기: 한 단어를 안 쓴 채 다른 단어를 이만큼 배우면 그 단어 점수가 절반이 된다.
     /// 시계가 아니라 친 단어 수로 세므로 며칠 쉬어도 잊지 않는다. (사용자 결정 2026-11-11: 3,000)
     static let halfLife: Double = 3000
+    /// 구절은 몇 단어까지 (2~4).
+    static let maxPhraseWords = 4
+    /// 구절 전체 글자 수 상한 (띄어쓰기 포함).
+    static let maxPhraseLength = 60
+    /// 기억할 최대 구절 수. 넘으면 오래되고 드물게 쓴 구절부터 정리한다(직접 넣은 것은 남김).
+    static let maxPhrases = 2000
+    /// 추천 칸 중 구절이 쓸 수 있는 칸 수 (사용자 결정 2026-11-13: 2).
+    static let maxPhraseSuggestions = 2
+    /// 앞 두 단어 묶음 하나 뒤에 기억할 다음 단어 수.
+    static let maxNextWordsPerPair = 10
+    /// 기억할 앞 두 단어 묶음 수.
+    static let maxWordPairs = 3000
 
     private(set) var model: PredictionModel
+
+    /// 구절 → 비교용 키. 디스크에 저장하지 않는다.
+    private var phraseKeyCache: [String: String] = [:]
+    /// 구절 소문자 정규형 → 저장된 원형.
+    private var phraseIndex: [String: String] = [:]
 
     /// 단어 → 비교용 키(자모 분해 + 소문자). 디스크에 저장하지 않고 메모리에서만 쓴다.
     private var keyCache: [String: String] = [:]
@@ -183,10 +220,29 @@ final class PredictionEngine {
             model.bigrams = bigrams
         }
         let needsStemBackfill = model.version < 3
+        let needsPhraseBackfill = model.version < 4
         model.version = PredictionModel.currentVersion
         self.model = model
         rebuildKeyCache()
         if needsStemBackfill { backfillStems() }
+        if needsPhraseBackfill { backfillPhrases() }
+    }
+
+    /// 판 4 를 처음 읽을 때 한 번: 이미 기억한 단어 짝 중 두 번 넘게 이어 쓴 것을 두 단어 구절로 옮긴다.
+    /// 단어 짝 횟수가 곧 그 두 단어를 띄어 이어 쓴 횟수라, 지난 기록에서도 구절 추천이 바로 나온다.
+    private func backfillPhrases() {
+        let tick = model.tick
+        for (from, next) in model.bigrams {
+            let head = canonicalIndex[from] ?? from
+            for (word, n) in next where n >= Self.minUsesToSuggest {
+                let phrase = head + " " + word
+                guard phrase.count <= Self.maxPhraseLength, phraseIndex[Self.normalized(phrase)] == nil else { continue }
+                model.phrases[phrase] = PredictionWordEntry(count: n, lastUsed: tick, score: Double(n))
+                phraseKeyCache[phrase] = Self.matchKey(for: phrase)
+                phraseIndex[Self.normalized(phrase)] = phrase
+            }
+        }
+        prunePhrasesIfNeeded()
     }
 
     /// 판 3 을 처음 읽을 때 한 번: 이미 배운 조사 붙은 꼴("감정평가를" · "감정평가의")에서도 앞부분을 센다.
@@ -228,8 +284,10 @@ final class PredictionEngine {
     /// - Parameters:
     ///   - word: 입력을 끝낸 단어 (구분자 제외)
     ///   - previous: 같은 문장에서 바로 앞에 쓴 단어. 없으면 `nil`
+    ///   - precedingWords: 같은 문장에서 이 단어 앞에 띄어 쓴 단어들 (먼 것 → 가까운 것, 마지막 = `previous`).
+    ///     앞 두 단어 · 구절을 배우는 데 쓴다. 비어 있으면 `previous` 하나만 있는 것으로 본다.
     @discardableResult
-    func learn(word: String, previous: String?) -> Bool {
+    func learn(word: String, previous: String?, precedingWords: [String] = []) -> Bool {
         guard Self.isLearnable(word) || isManual(word) else { return false }
         model.tick += 1
 
@@ -255,9 +313,177 @@ final class PredictionEngine {
             model.bigrams[from] = next
         }
 
+        learnContext(of: stored, precedingWords: precedingWords.isEmpty ? [previous].compactMap { $0 } : precedingWords)
         creditStem(of: stored)
         pruneIfNeeded()
         return true
+    }
+
+    // MARK: - 앞 두 단어 · 구절 (개선 방안 8번 · 10번 넓힘, 2026-11-13 사용자 결정)
+
+    /// 앞 단어들 가운데 배워도 되는 것만, 가까운 쪽부터 끊기지 않게 이어진 것 (먼 것 → 가까운 것, 3개까지).
+    private func learnableChain(_ words: [String]) -> [String] {
+        var chain: [String] = []
+        for w in words.reversed() {
+            guard chain.count < Self.maxPhraseWords - 1, Self.isLearnable(w) || isManual(w) else { break }
+            chain.insert(canonicalForm(of: w), at: 0)
+        }
+        return chain
+    }
+
+    private func learnContext(of stored: String, precedingWords: [String]) {
+        let chain = learnableChain(precedingWords)
+        guard !chain.isEmpty else { return }
+
+        if chain.count >= 2 {
+            let pair = Self.pairKey(chain[chain.count - 2], chain[chain.count - 1])
+            var next = model.trigrams[pair] ?? [:]
+            next[stored, default: 0] += 1
+            if next.count > Self.maxNextWordsPerPair,
+               let weakest = next.min(by: { lhs, rhs in
+                   lhs.value != rhs.value ? lhs.value < rhs.value : lhs.key > rhs.key
+               }) {
+                next.removeValue(forKey: weakest.key)
+            }
+            model.trigrams[pair] = next
+            pruneWordPairsIfNeeded()
+        }
+
+        for n in 1...chain.count {
+            let phrase = (chain.suffix(n) + [stored]).joined(separator: " ")
+            guard phrase.count <= Self.maxPhraseLength else { break }
+            bumpPhrase(phrase)
+        }
+        prunePhrasesIfNeeded()
+    }
+
+    private func bumpPhrase(_ phrase: String) {
+        let key = Self.normalized(phrase)
+        let stored = phraseIndex[key] ?? phrase
+        var entry = model.phrases[stored] ?? PredictionWordEntry(count: 0, lastUsed: model.tick, score: 0)
+        entry.score = Self.decayedScore(entry, at: model.tick) + 1
+        entry.count += 1
+        entry.lastUsed = model.tick
+        model.phrases[stored] = entry
+        phraseKeyCache[stored] = Self.matchKey(for: stored)
+        phraseIndex[key] = stored
+    }
+
+    static func pairKey(_ first: String, _ second: String) -> String {
+        normalized(first) + " " + normalized(second)
+    }
+
+    private func pruneWordPairsIfNeeded() {
+        guard model.trigrams.count > Self.maxWordPairs else { return }
+        let target = Self.maxWordPairs * 9 / 10
+        let ranked = model.trigrams.sorted { lhs, rhs in
+            let l = lhs.value.values.reduce(0, +), r = rhs.value.values.reduce(0, +)
+            return l != r ? l < r : lhs.key < rhs.key
+        }
+        for (key, _) in ranked.prefix(model.trigrams.count - target) {
+            model.trigrams.removeValue(forKey: key)
+        }
+    }
+
+    private func prunePhrasesIfNeeded() {
+        guard model.phrases.count > Self.maxPhrases else { return }
+        let target = Self.maxPhrases * 9 / 10
+        let tick = model.tick
+        let ranked = model.phrases
+            .filter { !model.manualPhrases.contains(Self.normalized($0.key)) }
+            .sorted { lhs, rhs in
+                let l = Self.decayedScore(lhs.value, at: tick), r = Self.decayedScore(rhs.value, at: tick)
+                return l != r ? l < r : lhs.key < rhs.key
+            }
+        for (phrase, _) in ranked.prefix(max(0, model.phrases.count - target)) {
+            removePhrase(stored: phrase)
+        }
+    }
+
+    private func removePhrase(stored: String) {
+        model.phrases.removeValue(forKey: stored)
+        phraseKeyCache.removeValue(forKey: stored)
+        let key = Self.normalized(stored)
+        phraseIndex.removeValue(forKey: key)
+        model.manualPhrases.remove(key)
+    }
+
+    /// 구절 하나를 잊는다 (추천 바에서 길게 누르거나 앱에서 지움).
+    func forget(phrase: String) {
+        let key = Self.normalized(Self.normalizedPhraseSpacing(phrase))
+        if let stored = phraseIndex[key] { removePhrase(stored: stored) }
+        model.manualPhrases.remove(key)
+    }
+
+    /// 사용자가 직접 넣거나 고친 구절인지.
+    func isManualPhrase(_ phrase: String) -> Bool {
+        model.manualPhrases.contains(Self.normalized(phrase))
+    }
+
+    /// 단어 사이 공백을 하나로 맞춘다.
+    static func normalizedPhraseSpacing(_ phrase: String) -> String {
+        phrase.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+    }
+
+    /// 직접 넣을 수 없는 구절이면 그 까닭. 넣을 수 있으면 `nil`.
+    static func phraseProblem(_ phrase: String) -> String? {
+        let words = phrase.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+        if words.isEmpty { return "구절을 입력해 주세요." }
+        guard (2...maxPhraseWords).contains(words.count) else {
+            return "두 단어에서 \(maxPhraseWords) 단어까지 넣을 수 있습니다. 단어 사이는 띄어 주세요."
+        }
+        if words.joined(separator: " ").count > maxPhraseLength { return "\(maxPhraseLength)자까지 넣을 수 있습니다." }
+        for word in words {
+            if let bad = word.first(where: { !isManualWordCharacter($0) }) {
+                return "「\(bad)」는 구절 안에 넣을 수 없습니다. 문장부호(. , ? ! ; :)·괄호·따옴표는 단어가 끝났다는 신호로 쓰입니다."
+            }
+        }
+        return nil
+    }
+
+    private func addManualPhrase(_ phrase: String) {
+        guard Self.phraseProblem(phrase) == nil else { return }
+        let spaced = Self.normalizedPhraseSpacing(phrase)
+        let key = Self.normalized(spaced)
+        let stored = phraseIndex[key] ?? spaced
+        var entry = model.phrases[stored] ?? PredictionWordEntry(count: 0, lastUsed: model.tick, score: 0)
+        entry.score = max(Self.decayedScore(entry, at: model.tick), Double(Self.minUsesToSuggest))
+        entry.count = max(entry.count, Self.minUsesToSuggest)
+        entry.lastUsed = model.tick
+        model.phrases[stored] = entry
+        phraseKeyCache[stored] = Self.matchKey(for: stored)
+        phraseIndex[key] = stored
+        model.manualPhrases.insert(key)
+        prunePhrasesIfNeeded()
+    }
+
+    private func renamePhrase(from old: String, to new: String) {
+        guard Self.phraseProblem(new) == nil,
+              let oldStored = phraseIndex[Self.normalized(Self.normalizedPhraseSpacing(old))],
+              let oldEntry = model.phrases[oldStored] else { return }
+        let spaced = Self.normalizedPhraseSpacing(new)
+        removePhrase(stored: oldStored)
+        let newKey = Self.normalized(spaced)
+        let newStored = phraseIndex[newKey] ?? spaced
+        var entry = oldEntry
+        if let existing = model.phrases[newStored] {
+            let tick = model.tick
+            entry.count += existing.count
+            entry.score = Self.decayedScore(oldEntry, at: tick) + Self.decayedScore(existing, at: tick)
+            entry.lastUsed = tick
+        }
+        model.phrases[newStored] = entry
+        phraseKeyCache[newStored] = Self.matchKey(for: newStored)
+        phraseIndex[newKey] = newStored
+        model.manualPhrases.insert(newKey)
+    }
+
+    /// 앱 화면에 보여 줄 구절 목록 (원형, 쓴 횟수, 지금 순위 점수, 직접 넣었는지).
+    var phraseList: [(phrase: String, count: Int, score: Double, isManual: Bool)] {
+        let tick = model.tick
+        return model.phrases.map { phrase, entry in
+            (phrase, entry.count, Self.decayedScore(entry, at: tick), isManualPhrase(phrase))
+        }
     }
 
     // MARK: - 조사 나눠 배우기 (개선 방안 6번, 2026-11-12 사용자 결정)
@@ -355,6 +581,21 @@ final class PredictionEngine {
             }
         }
         model.bigrams.removeValue(forKey: key)
+        // 앞 두 단어 · 구절에서도 지운다 — 오타로 지운 단어가 구절 후보로 남지 않게.
+        for (pair, var next) in model.trigrams {
+            if pair.split(separator: " ").contains(where: { String($0) == key }) {
+                model.trigrams.removeValue(forKey: pair)
+                continue
+            }
+            if next.keys.contains(where: { Self.normalized($0) == key }) {
+                next = next.filter { Self.normalized($0.key) != key }
+                model.trigrams[pair] = next.isEmpty ? nil : next
+            }
+        }
+        for phrase in model.phrases.keys
+        where !isManualPhrase(phrase) && phrase.split(separator: " ").contains(where: { Self.normalized(String($0)) == key }) {
+            removePhrase(stored: phrase)
+        }
         model.manualWords.remove(key)
         // 지운 단어가 조사 앞부분으로 곧바로 되살아나지 않게 증거도 지운다.
         model.stemEvidence.removeValue(forKey: key)
@@ -369,6 +610,8 @@ final class PredictionEngine {
         model.appliedResetToken = token
         keyCache = [:]
         canonicalIndex = [:]
+        phraseKeyCache = [:]
+        phraseIndex = [:]
     }
 
     // MARK: - 직접 넣은 단어 (메인 앱 「학습한 단어」 화면)
@@ -388,6 +631,9 @@ final class PredictionEngine {
             case .add(let word): addManual(word)
             case .delete(let word): forget(word: word)
             case .rename(let from, let to): rename(from: from, to: to)
+            case .addPhrase(let phrase): addManualPhrase(phrase)
+            case .deletePhrase(let phrase): forget(phrase: phrase)
+            case .renamePhrase(let from, let to): renamePhrase(from: from, to: to)
             }
         }
         model.appliedEditId = last.id
@@ -499,7 +745,7 @@ final class PredictionEngine {
     /// 개발자 리포트 한 줄. 숫자만 담고 단어는 담지 않는다.
     var diagnosticLine: String {
         let s = model.stats
-        return "배운 단어 \(model.words.count)개(추천 가능 \(suggestableWordCount)개) / 추천 보여 줌 \(s.shown)번 / 고름 \(s.accepted)번 / 아낀 글자 \(s.savedCharacters)자"
+        return "배운 단어 \(model.words.count)개(추천 가능 \(suggestableWordCount)개) / 구절 \(model.phrases.count)개 / 추천 보여 줌 \(s.shown)번 / 고름 \(s.accepted)번 / 아낀 글자 \(s.savedCharacters)자"
     }
 
     // MARK: - Suggestions
@@ -510,20 +756,36 @@ final class PredictionEngine {
     /// - 아니면 `prefix` 로 시작하는 단어. 같은 점수면 `previous` 뒤에 이어 쓴 적이 있는 쪽이 앞선다.
     ///
     /// 입력 중인 단어와 똑같은 단어는 후보에서 뺀다 — 눌러도 바뀌는 게 없다.
-    func suggestions(prefix: String, previous: String?, limit: Int = PredictionEngine.defaultLimit) -> [String] {
+    ///
+    /// `beforePrevious` = `previous` 바로 앞 단어. 둘 다 있으면 그 두 단어 뒤에 이어 쓴 단어를 먼저 띄운다.
+    /// 입력 중인 단어로 시작하는 구절은 `maxPhraseSuggestions` 칸까지 단어 뒤에 붙인다.
+    func suggestions(prefix: String, previous: String?, beforePrevious: String? = nil,
+                     limit: Int = PredictionEngine.defaultLimit) -> [String] {
         guard limit > 0 else { return [] }
         let followers = previous.flatMap { model.bigrams[Self.normalized($0)] } ?? [:]
+        let pairFollowers: [String: Int] = {
+            guard let previous, let beforePrevious else { return [:] }
+            return model.trigrams[Self.pairKey(beforePrevious, previous)] ?? [:]
+        }()
 
         if prefix.isEmpty {
-            return followers
-                .compactMap { follower -> (String, Double)? in
-                    guard let entry = model.words[follower.key],
-                          entry.count >= Self.minUsesToSuggest else { return nil }
-                    return (follower.key, Double(follower.value) + freshness(of: entry))
-                }
-                .sorted(by: Self.byScoreThenWord)
-                .prefix(limit)
-                .map { $0.0 }
+            func ranked(_ source: [String: Int], weight: Double) -> [String] {
+                source
+                    .compactMap { follower -> (String, Double)? in
+                        guard let entry = model.words[follower.key],
+                              entry.count >= Self.minUsesToSuggest else { return nil }
+                        return (follower.key, Double(follower.value) * weight + freshness(of: entry))
+                    }
+                    .sorted(by: Self.byScoreThenWord)
+                    .map { $0.0 }
+            }
+            var result: [String] = []
+            for word in ranked(pairFollowers, weight: 1) + ranked(followers, weight: 1)
+            where !result.contains(word) {
+                result.append(word)
+                if result.count == limit { break }
+            }
+            return result
         }
 
         // 문장부호 등 단어가 될 수 없는 글자가 끼어 있으면 추천하지 않는다.
@@ -541,13 +803,39 @@ final class PredictionEngine {
                   let key = keyCache[word], key.count > prefixKey.count,
                   key.hasPrefix(prefixKey),
                   Self.normalized(word) != typed else { continue }
-            let followBonus = Double(followers[word] ?? 0) * 3
+            let followBonus = Double(followers[word] ?? 0) * 3 + Double(pairFollowers[word] ?? 0) * 5
             scored.append((word, Self.decayedScore(entry, at: model.tick) + followBonus))
         }
-        return scored
+
+        var phraseScored: [(String, Double)] = []
+        for (phrase, entry) in model.phrases {
+            guard entry.count >= Self.minUsesToSuggest,
+                  !manualOnly || isManualPhrase(phrase),
+                  let key = phraseKeyCache[phrase], key.count > prefixKey.count,
+                  key.hasPrefix(prefixKey) else { continue }
+            let followBonus = Double(followers[phrase.split(separator: " ").first.map(String.init) ?? ""] ?? 0)
+            phraseScored.append((phrase, Self.decayedScore(entry, at: model.tick) + followBonus))
+        }
+        let phrases = phraseScored
             .sorted(by: Self.byScoreThenWord)
-            .prefix(limit)
-            .map { Self.matchingCase(of: $0.0, to: prefix) }
+            .prefix(min(Self.maxPhraseSuggestions, limit))
+        let words = scored
+            .sorted(by: Self.byScoreThenWord)
+            .prefix(limit - phrases.count)
+        return (Array(words) + Array(phrases)).map { Self.matchingCase(of: $0.0, to: prefix) }
+    }
+
+    /// `rest` 끝에서부터 띄어 쓴 단어들을 거꾸로 읽는다 (먼 것 → 가까운 것, `max` 개까지).
+    /// 문장부호 · 줄바꿈을 만나면 멈춘다 — 문장이 바뀌면 앞 단어로 치지 않는다.
+    func precedingWords(in rest: Substring, max: Int) -> [String] {
+        var words: [String] = []
+        var rest = rest
+        while words.count < max, let word = manualAwarePreviousWord(in: rest) {
+            words.insert(word, at: 0)
+            let gap = rest.reversed().prefix(while: { !Self.isManualWordCharacter($0) }).count
+            rest = rest.dropLast(gap).dropLast(word.count)
+        }
+        return words
     }
 
     // MARK: - Context parsing (직접 넣은 단어까지 보는 판)
@@ -723,9 +1011,16 @@ final class PredictionEngine {
             if !kept.isEmpty { bigrams[from] = kept }
         }
         model.bigrams = bigrams
+        for (pair, next) in model.trigrams {
+            let kept = next.filter { !removed.contains($0.key) }
+            model.trigrams[pair] = kept.isEmpty ? nil : kept
+        }
     }
 
     private func rebuildKeyCache() {
+        phraseKeyCache = Dictionary(uniqueKeysWithValues: model.phrases.keys.map { ($0, Self.matchKey(for: $0)) })
+        phraseIndex = Dictionary(model.phrases.keys.sorted().map { (Self.normalized($0), $0) },
+                                 uniquingKeysWith: { first, _ in first })
         keyCache = Dictionary(uniqueKeysWithValues: model.words.keys.map { ($0, Self.matchKey(for: $0)) })
         // 저장 파일이 손으로 고쳐져 대소문자만 다른 단어가 둘 있어도 죽지 않게 먼저 것을 남긴다.
         canonicalIndex = Dictionary(model.words.keys.sorted().map { (Self.normalized($0), $0) },
