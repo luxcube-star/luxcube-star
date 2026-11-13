@@ -48,6 +48,13 @@ struct KeyboardPreviewView: View {
     /// AppearanceSettingsView) leave this nil and keep preview-mode behaviour.
     var liveInputDelegate: KeyboardViewModelDelegate? = nil
 
+    /// 맞춘 버릇 값을 어떻게 쓸지. 기본은 읽기만(긋기 테스트가 실제 키보드와 같은 판정).
+    /// 처음 맞추기(15번)는 `.off` — 맞춘 값 없이 재야 한다.
+    var gestureHabitPersistence: KeyboardViewModel.GestureHabitPersistence = .readOnly
+
+    /// 자음 키 긋기 · 탭이 확정될 때마다 잰 숫자 (처음 맞추기 화면).
+    var onConsonantMeasured: ((GestureCalibrationSample) -> Void)? = nil
+
     private var isInteractive: Bool {
         onVowelPreview != nil || onVowelPreviewWithPoint != nil
             || onConsonantPreview != nil || liveInputDelegate != nil
@@ -106,7 +113,8 @@ struct KeyboardPreviewView: View {
 
     private func applyConfiguration() {
         // 긋기 실시간 테스트가 실제 키보드와 같은 판정을 보이도록 맞춘 값을 읽기만 한다.
-        viewModel.gestureHabitPersistence = .readOnly
+        viewModel.gestureHabitPersistence = gestureHabitPersistence
+        viewModel.onConsonantGestureMeasured = onConsonantMeasured
         viewModel.previewMode = shouldRunInPreviewMode
         viewModel.onPreviewVowel = onVowelPreview
         viewModel.onPreviewVowelDetailed = onVowelPreviewWithPoint

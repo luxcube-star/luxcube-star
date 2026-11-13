@@ -11,6 +11,8 @@ final class GestureHabitBoardModel: ObservableObject {
     /// 남겼지만 키보드가 아직 반영하지 않은 요청.
     @Published private(set) var pendingReverts: Set<Int> = []
     @Published private(set) var pendingReset = false
+    /// 처음 맞추기(15번) 결과를 남겼지만 키보드가 아직 반영하지 않음.
+    @Published private(set) var pendingCalibration = false
 
     func reload() {
         model = GestureHabitStore.loadShared()
@@ -21,6 +23,10 @@ final class GestureHabitBoardModel: ObservableObject {
             return nil
         })
         pendingReset = pending.contains { $0.edit == .resetAll }
+        pendingCalibration = pending.contains {
+            if case .calibrate = $0.edit { return true }
+            return false
+        }
     }
 
     /// 아직 되돌리지 않은 맞춘 일, 새것부터.
@@ -52,6 +58,13 @@ struct GestureHabitSection: View {
                     Text("\(model.observedCount)번").foregroundColor(.secondary)
                 }
             }
+            NavigationLink("처음 맞추기 — 문장을 쳐서 버릇 재기") {
+                GestureCalibrationView()
+            }
+            if board.pendingCalibration {
+                Text("처음 맞추기 결과를 남겼습니다. 키보드를 열면 반영됩니다.")
+                    .font(.footnote).foregroundColor(.secondary)
+            }
             if board.pendingReset {
                 Text("처음으로 되돌리기를 남겼습니다. 키보드를 열면 반영됩니다.")
                     .font(.footnote).foregroundColor(.secondary)
@@ -59,12 +72,13 @@ struct GestureHabitSection: View {
             ForEach(board.activeEvents) { event in
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("\(event.key) 키 · \(event.knob.displayName) \(event.knob.formatted(event.delta))")
+                        Text("\(event.key) 키 · \(event.knob.displayName) \(event.knob.formatted(event.delta))"
+                             + (event.fromCalibration == true ? " (처음 맞추기)" : ""))
                         Text(event.date, format: .dateTime.month().day().hour().minute())
                             .font(.caption2).foregroundColor(.secondary)
                     }
                     Spacer()
-                    if board.pendingReverts.contains(event.id) || board.pendingReset {
+                    if board.pendingReverts.contains(event.id) || board.pendingReset || board.pendingCalibration {
                         Text("키보드를 열면 되돌림").font(.caption).foregroundColor(.secondary)
                     } else {
                         Button("되돌리기") { board.revert(event) }
@@ -79,7 +93,7 @@ struct GestureHabitSection: View {
         } header: {
             Text("새모아가 맞춘 것")
         } footer: {
-            Text("같은 자음 키에서 모음이 잘못 들어가 지우고 다시 그은 일이 5번 쌓이면, 그 키의 긋기 각도(2°씩 10°까지) · 길이 · 휨 · 최소 길이를 스스로 조금씩 맞춥니다. 친 글은 남기지 않고 키 · 숫자만 이 기기에 둡니다. 전체 접근 허용이 꺼져 있으면 키보드 안에서는 맞춰지지만 여기에는 보이지 않습니다.")
+            Text("같은 자음 키에서 모음이 잘못 들어가 지우고 다시 그은 일이 5번 쌓이면, 그 키의 긋기 각도(2°씩 10°까지) · 길이 · 휨 · 최소 길이를 스스로 조금씩 맞춥니다. 친 글은 남기지 않고 키 · 숫자만 이 기기에 둡니다. 「처음 맞추기」는 정해 준 문장을 치게 해 처음 값을 잽니다. 전체 접근 허용이 꺼져 있으면 키보드 안에서는 맞춰지지만 여기에는 보이지 않고, 처음 맞추기 결과도 키보드에 닿지 않습니다.")
         }
         .onAppear { board.reload() }
         .confirmationDialog("맞춘 것을 모두 처음으로 되돌릴까요?", isPresented: $confirmingReset, titleVisibility: .visible) {

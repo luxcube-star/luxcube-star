@@ -102,6 +102,8 @@ struct GestureHabitEvent: Codable, Equatable, Identifiable {
     /// 이번에 실제로 바뀐 양 (상한에 걸려 덜 바뀌었으면 그만큼).
     let delta: Double
     var reverted: Bool = false
+    /// 처음 맞추기(15번)로 넣은 것이면 true. 예전 파일에는 없다(nil = 오타로 맞춘 것).
+    var fromCalibration: Bool? = nil
 }
 
 struct GestureHabitModel: Codable, Equatable {
@@ -165,6 +167,8 @@ struct GestureHabitModel: Codable, Equatable {
 enum GestureHabitEdit: Codable, Equatable {
     case revert(eventId: Int)
     case resetAll
+    /// 처음 맞추기(15번) 결과 — 앞서 맞춘 값 · 쌓이던 오타를 지우고 이 값으로 바꾼다 (사용자 결정 7가).
+    case calibrate(keys: [String: GestureHabitAdjustment])
 }
 
 struct GestureHabitEditRequest: Codable, Equatable {
@@ -331,6 +335,29 @@ final class GestureHabitLearner {
                 let applied = request.id
                 model = GestureHabitModel()
                 model.appliedEditId = applied
+            case .calibrate(let keys):
+                let applied = request.id
+                let observed = model.observedCount
+                model = GestureHabitModel()
+                model.appliedEditId = applied
+                model.observedCount = observed
+                // 키 · 손잡이마다 한 줄 — 「새모아가 맞춘 것」에서 줄마다 되돌릴 수 있게.
+                let date = now()
+                for key in keys.keys.sorted() {
+                    var adjustment = GestureHabitAdjustment.zero
+                    for knob in GestureHabitKnob.allCases {
+                        adjustment.set(knob, to: keys[key]?.value(of: knob) ?? 0)
+                        let value = adjustment.value(of: knob)
+                        guard value != 0 else { continue }
+                        model.events.append(GestureHabitEvent(id: model.nextEventId, date: date, key: key,
+                                                              knob: knob, delta: value, fromCalibration: true))
+                        model.nextEventId += 1
+                    }
+                    if !adjustment.isZero { model.keys[key] = adjustment }
+                }
+                if model.events.count > GestureHabitModel.maxEvents {
+                    model.events.removeFirst(model.events.count - GestureHabitModel.maxEvents)
+                }
             case .revert(let eventId):
                 if let index = model.events.firstIndex(where: { $0.id == eventId && !$0.reverted }) {
                     let event = model.events[index]

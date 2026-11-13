@@ -96,6 +96,10 @@ class KeyboardViewModel: ObservableObject {
     /// and the resolved final vowel on `.ended`.
     var onPreviewConsonantGesture: ((PreviewGesturePhase, [GestureDirection], Jungseong?) -> Void)? = nil
 
+    /// 처음 맞추기 화면(개선 방안 15번)용 — 자음 키 긋기 · 탭이 확정될 때마다 잰 숫자를 넘긴다.
+    /// 키보드 익스텐션에서는 nil 이라 아무 일도 없다.
+    var onConsonantGestureMeasured: ((GestureCalibrationSample) -> Void)? = nil
+
     /// Raw touch trail captured during a preview-mode consonant gesture so
     /// callers receive the full point list with each `.moved` / `.ended`
     /// phase. Reset on every `.began`.
@@ -1534,6 +1538,20 @@ class KeyboardViewModel: ObservableObject {
 
     /// 자음 키 긋기 · 탭 하나를 남긴다 (숫자만). 만든 글자의 자리는 다음 갱신에서 정한다.
     private func noteHabitSample(key: Choseong, vowel: Jungseong?, directions: [GestureDirection]) {
+        if let onConsonantGestureMeasured {
+            let analyzer = gestureAnalyzer
+            onConsonantGestureMeasured(GestureCalibrationSample(
+                key: key, vowel: vowel, directions: directions,
+                netVector: analyzer.netDisplacement,
+                strokeVectors: analyzer.finalizedStrokeInfos().map(\.vector),
+                maxDisplacement: analyzer.maxDisplacementFromStart,
+                returnDistance: analyzer.returnDistanceFromFarthest,
+                keyWidth: analyzer.keyWidth,
+                swipeThreshold: analyzer.effectiveThreshold,
+                reversalThreshold: analyzer.effectiveReversalThreshold,
+                rotationOffset: analyzer.settings.recognizerRotationOffset(forColumn: analyzer.columnId),
+                fourWay: analyzer.settings.swipeProfile.fourWayMode))
+        }
         guard !previewMode, KeyboardSettings.shared.gestureHabitEnabled else { return }
         habitTracker.note(GestureHabitSample(
             key: key, vowel: vowel, directions: directions,

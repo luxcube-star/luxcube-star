@@ -195,6 +195,23 @@ class GestureAnalyzer {
         }
     }
 
+    /// 누른 자리 → 마지막 자리 (처음 맞추기의 각도 재기).
+    var netDisplacement: CGVector {
+        guard let start = touchPoints.first, let end = touchPoints.last else { return .zero }
+        return CGVector(dx: end.x - start.x, dy: end.y - start.y)
+    }
+
+    /// 가장 멀리 간 자리 → 마지막 자리 거리 — 되돌아온 길이 (처음 맞추기의 길이 재기).
+    var returnDistanceFromFarthest: CGFloat {
+        guard let start = touchPoints.first, let end = touchPoints.last else { return 0 }
+        var farthest = start, best: CGFloat = 0
+        for point in touchPoints {
+            let d = hypot(point.x - start.x, point.y - start.y)
+            if d > best { best = d; farthest = point }
+        }
+        return hypot(end.x - farthest.x, end.y - farthest.y)
+    }
+
     private func analyzeLatestMovement() {
         guard touchPoints.count >= 2,
               let currentPoint = touchPoints.last,
