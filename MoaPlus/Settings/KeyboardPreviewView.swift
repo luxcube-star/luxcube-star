@@ -55,6 +55,11 @@ struct KeyboardPreviewView: View {
     /// 자음 키 긋기 · 탭이 확정될 때마다 잰 숫자 (처음 맞추기 화면).
     var onConsonantMeasured: ((GestureCalibrationSample) -> Void)? = nil
 
+    /// true 면 실제 키보드와 같은 크기로 그린다 — 폭은 받은 폭 그대로, 높이는 익스텐션과 같은 식
+    /// (`KeyboardViewController.computedKeyboardHeight`: 기기 높이 × 높이 배율 + 추천 바 + 하단 여백).
+    /// 모서리 · 테두리도 그리지 않는다. 처음 맞추기(15번)가 화면 맨 아래에 폭 가득 붙여 쓴다.
+    var matchesRealKeyboardSize: Bool = false
+
     private var isInteractive: Bool {
         onVowelPreview != nil || onVowelPreviewWithPoint != nil
             || onConsonantPreview != nil || liveInputDelegate != nil
@@ -86,17 +91,40 @@ struct KeyboardPreviewView: View {
             extra: settings.keyboardExtraBottomInset)
     }
 
+    /// 실제 키보드 높이 (세로 아이폰 · 아이패드). 가로 화면 판정은 익스텐션과 같은 식을 쓴다.
+    private var realKeyboardHeight: CGFloat {
+        let bounds = UIScreen.main.bounds
+        let short = min(bounds.width, bounds.height), long = max(bounds.width, bounds.height)
+        let landscape = KeyboardMetrics.isLandscapeKeyboard(
+            keyboardWidth: bounds.width, screenShort: short, screenLong: long)
+        return KeyboardMetrics.keyboardHeight(
+            isPad: UIDevice.current.userInterfaceIdiom == .pad, isLandscape: landscape,
+            screenShort: short, screenLong: long, scale: settings.keyboardHeightScale)
+            + (viewModel.isCandidateBarVisible ? KeyboardMetrics.abbreviationCandidateBarFootprint : 0)
+            + previewBottomInset
+    }
+
     var body: some View {
+        if matchesRealKeyboardSize {
+            keyboard
+                .frame(maxWidth: .infinity)
+                .frame(height: realKeyboardHeight)
+        } else {
+            keyboard
+                .aspectRatio(kbAspect, contentMode: .fit)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(Color(.separator), lineWidth: 0.5)
+                )
+        }
+    }
+
+    private var keyboard: some View {
         KeyboardView(
             viewModel: viewModel,
             gestureState: viewModel.gestureState,
             popupState: viewModel.popupState
-        )
-        .aspectRatio(kbAspect, contentMode: .fit)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(Color(.separator), lineWidth: 0.5)
         )
         // When either preview callback is provided, hit testing is enabled
         // but the view model's `previewMode` neutralises every input path

@@ -110,15 +110,29 @@ struct GestureCalibrationView: View {
     @ObservedObject private var settings = KeyboardSettings.shared
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                switch model.stage {
-                case .intro: intro
-                case .typing: typing
-                case .result: resultView
+        Group {
+            if model.stage == .typing {
+                // 키보드는 실제 키보드와 같은 자리 · 크기로 — 화면 맨 아래, 폭 가득 (사용자 결정 2026-11-13 1가).
+                VStack(spacing: 0) {
+                    ScrollView {
+                        typing.padding()
+                    }
+                    KeyboardPreviewView(
+                        liveInputDelegate: inputDelegate,
+                        gestureHabitPersistence: .off,
+                        onConsonantMeasured: { sample in model.ingest(sample) },
+                        matchesRealKeyboardSize: true
+                    )
+                    .id(model.keyboardToken)
+                }
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        if model.stage == .intro { intro } else { resultView }
+                    }
+                    .padding()
                 }
             }
-            .padding()
         }
         .navigationTitle("처음 맞추기")
         .navigationBarTitleDisplayMode(.inline)
@@ -147,7 +161,7 @@ struct GestureCalibrationView: View {
     // MARK: 치기
 
     private var typing: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("문장 \(model.sentenceIndex + 1) / \(model.sentences.count)")
                     .font(.subheadline.weight(.semibold))
@@ -165,15 +179,8 @@ struct GestureCalibrationView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(12)
                 .background(RoundedRectangle(cornerRadius: 10).stroke(Color(.separator)))
-            Text("틀려도 지우지 말고 그대로 이어 치십시오.")
+            Text("틀려도 지우지 말고 그대로 이어 치십시오. 아래 키보드는 실제 키보드와 같은 자리 · 크기입니다.")
                 .font(.caption).foregroundColor(.secondary)
-
-            KeyboardPreviewView(
-                liveInputDelegate: inputDelegate,
-                gestureHabitPersistence: .off,
-                onConsonantMeasured: { sample in model.ingest(sample) }
-            )
-            .id(model.keyboardToken)
 
             HStack {
                 Button("이 문장 다시") {
