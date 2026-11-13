@@ -774,6 +774,21 @@ v2.2.5 까지 ↗/↘ 를 꺼도 ㅣ/ㅡ 가 들어갔다 — `normalizedDirecti
   그대로 배움). 더 짧은 조사로 다시 자르면 「책이라도 → 책이+라도」가 되므로 되돌리지 말 것. 판 3(`currentVersion`)을 처음
   읽을 때 `backfillStems` 가 지난 조사 꼴에 같은 규칙을 한 번 적용. `forget` 은 증거도 지운다. 조사 후보 추천은 없음
 
+### 긋기 버릇 맞추기 (새모아, 개선 방안 13번, 2026-11-13 사용자 결정)
+- `MoaPlusKeyboard/Engine/GestureHabit.swift`. 자음 키(19개 따로, 모음 키 제외)마다 `GestureHabitAdjustment` 넷: 각도(구역 회전, 2°씩 ±10°) ·
+  길이(되돌림 · 방향 전환 문턱 += 키폭 비율, 2%씩 ±8%) · 휨(휜 획 합치기 한도 45° · 35° 에 더함, 2°씩 0~10°) · 최소 길이(첫 획 문턱, 2%씩 ±8%).
+  분석기는 `habit` 하나로 받는다 — 뷰모델이 `gestureStarted` 자음 키에서 넣고 **다른 키 · 슬롯 B 에서는 `.zero`**. 0 이면 예전 판정과 같다.
+- 세기(`GestureHabitTracker`): 자음 키 긋기 · 탭마다 숫자(키 · 모음 · 방향 · 가장 멀리 간 거리)를 남기고, 다음 갱신(`refreshPredictions` 첫머리)에서
+  그 긋기가 만든 글자의 문맥 자리를 정한다. 지우기 직전(`deleteBackward` · `deleteWord`) 문맥을 잡고, 다시 친 글이 지운 글 길이를 넘거나 같고 조합이
+  끝나면 맞대어 본다. **딱 한 글자 · 같은 자음 · 같은 받침 · 모음만 다름**(또는 낱자음 ↔ 받침 없는 글자 = 탭 ↔ 긋기)일 때만, 지운 글 10글자까지.
+  커서 이동(`moveCursor`) · 키보드 닫힘에서 기록을 비운다. 글자는 메모리에만.
+- 가르기(`GestureHabitLearner.classify`): 획 수 같고 한 칸(45°) 어긋남 → 각도 · 획 수 다름 → 사다리(더 많음: 내린 길이 되돌림 → 휨 + → 길이 +,
+  모자람: 넓힌 휨 되돌림 → 길이 −) · 긋다 만 탭(문턱의 40% 넘게 움직임) → 최소 길이 −. 같은 키 · 종류 · 쪽 5번 → 한 걸음(`stepThreshold`).
+- 저장 `GestureHabitStore`(App Group `gesture-habit.json`, 못 쓰면 로컬). 앱은 직접 고치지 않고 `gesture-habit-edits.json` 에 되돌리기 · 처음으로 요청
+  (「학습 내용」과 같은 방식, `applyPendingPredictionEdits` 가 함께 반영). 설정 `gestureHabitEnabled`(기본 ON, 끄면 맞춘 값도 안 씀).
+- 파일은 `gestureHabitPersistence` 가 `.readWrite`(키보드 컨트롤러) · `.readOnly`(앱 미리보기)일 때만 — 기본 `.off` 라 테스트가 기기에 쌓인 값에 흔들리지 않는다.
+- 앱: 입력 기록 보드 「새모아가 맞춘 것」(`GestureHabitSection`), 개발자 리포트 「버릇 맞추기」 줄. 가드 `GestureHabitTests` · `KeyboardViewModelGestureHabitTests`
+
 ### 멈추면 저절로 띄기 (새모아, 2026-11-11 사용자 결정)
 - 한글을 친 뒤 `KeyboardViewModel.autoSpaceDelay`(1초 고정) 동안 키를 안 누르면 `inputSpace()` 를 그대로 부른다 — 조합 끝내기 · 단축어 · 단어 학습 · 스페이스 두 번 → 마침표가 직접 친 스페이스와 같게 돈다.
 - 예약은 `inputConsonant`/`inputVowel` 뒤, 취소는 키를 누르는 순간(`keyPressFeedback` · `layerSwitchPressFeedback`)과 다른 입력 · 키보드 내려감(`endAutoSpaceSession`).

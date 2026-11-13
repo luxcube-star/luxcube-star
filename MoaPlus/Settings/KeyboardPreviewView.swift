@@ -105,6 +105,8 @@ struct KeyboardPreviewView: View {
     }
 
     private func applyConfiguration() {
+        // 긋기 실시간 테스트가 실제 키보드와 같은 판정을 보이도록 맞춘 값을 읽기만 한다.
+        viewModel.gestureHabitPersistence = .readOnly
         viewModel.previewMode = shouldRunInPreviewMode
         viewModel.onPreviewVowel = onVowelPreview
         viewModel.onPreviewVowelDetailed = onVowelPreviewWithPoint

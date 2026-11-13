@@ -48,6 +48,8 @@ class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedback {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        // 긋기 버릇 맞추기: 실제 키보드만 맞춘 값 파일을 읽고 쓴다.
+        viewModel.gestureHabitPersistence = .readWrite
 
         // Match the SwiftUI keyboard background fallback color so the first
         // frame doesn't flash the bare UIInputViewController background

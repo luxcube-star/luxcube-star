@@ -67,6 +67,7 @@ final class KeyboardSettings: ObservableObject {
         static let cursorRepeatSpeed = "cursorRepeatSpeed"
         static let periodOnDoubleSpace = "periodOnDoubleSpace"
         static let autoSpaceOnPause = "autoSpaceOnPause"
+        static let gestureHabitEnabled = "gestureHabitEnabled"
         static let predictionEnabled = "predictionEnabled"
         static let predictionLearningEnabled = "predictionLearningEnabled"
         static let predictionResetToken = "predictionResetToken"
@@ -398,6 +399,13 @@ final class KeyboardSettings: ObservableObject {
         didSet { guard !isLoading else { return }; writePrimitive(autoSpaceOnPauseEnabled, forKey: Keys.autoSpaceOnPause) }
     }
 
+    /// 긋기 버릇 맞추기 (개선 방안 13번, 사용자 결정 2026-11-13, 기본 ON): 같은 자음 키에서 모음 오타를 지우고
+    /// 다시 그은 일이 쌓이면 그 키의 각도 · 길이 · 휨 · 최소 길이를 스스로 조금씩 맞춘다 (`GestureHabitLearner`).
+    /// 끄면 맞춘 값도 쓰지 않는다(지우지는 않음 — 다시 켜면 돌아옴).
+    @Published var gestureHabitEnabled: Bool = true {
+        didSet { guard !isLoading else { return }; writePrimitive(gestureHabitEnabled, forKey: Keys.gestureHabitEnabled) }
+    }
+
     /// 학습한 단어 추천 바 표시 (기본 ON). 끄면 바가 사라지고 키보드 높이도 원래대로 돌아간다.
     @Published var predictionEnabled: Bool = true {
         didSet { guard !isLoading else { return }; writePrimitive(predictionEnabled, forKey: Keys.predictionEnabled) }
@@ -641,6 +649,7 @@ final class KeyboardSettings: ObservableObject {
         assign(\.cursorRepeatSpeed, defaults.object(forKey: Keys.cursorRepeatSpeed) as? Int ?? 1)
         assign(\.periodOnDoubleSpaceEnabled, defaults.object(forKey: Keys.periodOnDoubleSpace) as? Bool ?? true)
         assign(\.autoSpaceOnPauseEnabled, defaults.object(forKey: Keys.autoSpaceOnPause) as? Bool ?? true)
+        assign(\.gestureHabitEnabled, defaults.object(forKey: Keys.gestureHabitEnabled) as? Bool ?? true)
         assign(\.predictionEnabled, defaults.object(forKey: Keys.predictionEnabled) as? Bool ?? true)
         assign(\.predictionLearningEnabled, defaults.object(forKey: Keys.predictionLearningEnabled) as? Bool ?? true)
         assign(\.predictionResetToken, defaults.string(forKey: Keys.predictionResetToken) ?? "")
@@ -815,6 +824,7 @@ final class KeyboardSettings: ObservableObject {
         cursorRepeatSpeed = 1
         periodOnDoubleSpaceEnabled = true
         autoSpaceOnPauseEnabled = true
+        gestureHabitEnabled = true
         predictionEnabled = true
         predictionLearningEnabled = true
         englishAutoCapitalizeEnabled = false

@@ -83,6 +83,7 @@ final class DebugBoardStore: ObservableObject {
         조기 터치: \(s.earlyTouchDiagnostic ?? "(기록 없음)")
         조기 터치 (마지막 지연 기록): \(s.earlyTouchDelayedDiagnostic ?? "(없음)")
         자동 대문자: \(s.autoCapitalizeDiagnostic ?? "(아직 판정한 적 없음)")
+        버릇 맞추기: \(s.gestureHabitEnabled ? "ON" : "OFF") / \(GestureHabitStore.loadShared()?.diagnosticLine ?? "(아직 기록 없음 — 전체 접근이 꺼져 있으면 앱에 안 옴)")
         단어 추천: \(s.predictionEnabled ? "ON" : "OFF") / 학습 \(s.predictionLearningEnabled ? "ON" : "OFF") / \(s.predictionDiagnostic ?? "(아직 기록 없음 — 키보드를 쓰고 닫으면 생김)")
         전체 접근: \(fullAccessLine)
         App Group: \(KeyboardSettings.appGroupId) / 공유 폴더 \(FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: KeyboardSettings.appGroupId) == nil ? "없음(설정 공유 불가)" : "있음") / AltStore 값 \((Bundle.main.infoDictionary?["ALTAppGroups"] as? [String])?.joined(separator: ",") ?? "없음")
@@ -186,6 +187,8 @@ struct DebugBoardView: View {
             } footer: {
                 Text("키보드가 긋기마다 획별 방향·크기·각도(트림 전/후)와 결과 글자를 기록하고, 개발자 리포트에 함께 담습니다. 기록은 이 기기에만 남고(최근 200건 순환), 리포트를 직접 보낼 때만 전송됩니다.")
             }
+
+            GestureHabitSection(settings: settings)
 
             if !store.entries.isEmpty {
                 Section {

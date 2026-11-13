@@ -211,7 +211,7 @@ enum SettingsCatalog {
             title: "입력 기록 보드",
             icon: "note.text",
             destination: .debugBoard,
-            keywords: ["기록", "보드", "메모", "디버그", "실측", "오타기록", "테스트입력"]
+            keywords: ["기록", "보드", "메모", "디버그", "실측", "오타기록", "테스트입력", "버릇", "버릇 맞추기", "스스로 맞추기", "맞춘 것", "되돌리기"]
         ),
         SettingsEntry(
             title: "스페이스 드래그 커서 이동",

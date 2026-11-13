@@ -78,6 +78,7 @@
 			membershipExceptions = (
 				Engine/AbbreviationEngine.swift,
 				Engine/GestureAnalyzer.swift,
+				Engine/GestureHabit.swift,
 				Engine/HangulComposer.swift,
 				Engine/PredictionEngine.swift,
 				Engine/PredictionStore.swift,
@@ -121,6 +122,7 @@
 			membershipExceptions = (
 				Engine/AbbreviationEngine.swift,
 				Engine/GestureAnalyzer.swift,
+				Engine/GestureHabit.swift,
 				Engine/HangulComposer.swift,
 				Engine/PredictionEngine.swift,
 				Engine/PredictionStore.swift,

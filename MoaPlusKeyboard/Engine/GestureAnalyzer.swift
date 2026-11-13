@@ -48,6 +48,10 @@ class GestureAnalyzer {
     /// (fourWayMode 와 동일하게 GestureDirection.from 의 카디널 스냅을 켠다.)
     var forceCardinalOnly: Bool = false
 
+    /// 이 자음 키에 맞춘 긋기 버릇 (개선 방안 13번). 0 이면 예전과 같은 판정.
+    /// 뷰모델이 자음 키를 누를 때마다 넣고, 다른 키에서는 `.zero` 로 돌린다.
+    var habit: GestureHabitAdjustment = .zero
+
     /// Live center-key width, set by the view layer once geometry is
     /// known. Drives the proportional swipe threshold so the same
     /// "보통" / "길게" preset feels right on every iPhone size.
@@ -68,7 +72,8 @@ class GestureAnalyzer {
         // 등록에 실패하고 탭(ㅡ/ㅣ)으로 폴백되곤 한다 — ㅛㅠ 가 안 되던 핵심 원인.
         // 긋기 길이 설정(짧게/보통/길게)과 무관하게 keyWidth 기반의 낮은 고정
         // 임계(~10pt)를 써서 '길게' 설정에서도 짧은 긋기가 인식되게 한다.
-        return forceCardinalOnly ? keyWidth * Self.narrowKeyThresholdRatio : base
+        if forceCardinalOnly { return keyWidth * Self.narrowKeyThresholdRatio }
+        return max(base + CGFloat(habit.minLengthRatio) * keyWidth, 1)
     }
 
     /// vowel-primitive(ㅣ/ㅡ) 좁은 키 첫-방향 임계 (keyWidth 대비 ≈ 10pt).
@@ -84,13 +89,20 @@ class GestureAnalyzer {
     /// settings so user customisation in the UI flows through to actual
     /// judgment.
     var effectiveDirectionChangeThreshold: CGFloat {
+        let base: CGFloat
         if hasCustomDirectionChangeThreshold {
-            return directionChangeThreshold
+            base = directionChangeThreshold
+        } else if columnId > 0 {
+            base = settings.effectiveDirectionChangeThreshold(forColumn: columnId)
+        } else {
+            base = settings.directionChangeThreshold
         }
-        if columnId > 0 {
-            return settings.effectiveDirectionChangeThreshold(forColumn: columnId)
-        }
-        return settings.directionChangeThreshold
+        return max(base + habitLengthOffset, 1)
+    }
+
+    /// 버릇 맞추기의 길이 손잡이(키폭 비율)를 pt 로.
+    private var habitLengthOffset: CGFloat {
+        CGFloat(habit.lengthRatio) * keyWidth
     }
 
     /// Effective reversal threshold. Scales with the user's swipeLength
@@ -100,9 +112,9 @@ class GestureAnalyzer {
     var effectiveReversalThreshold: CGFloat {
         // Legacy/test constructor path: respect the explicit value.
         if reversalThreshold != KeyboardMetrics.reversalThreshold {
-            return reversalThreshold
+            return max(reversalThreshold + habitLengthOffset, 1)
         }
-        return settings.effectiveReversalThreshold(forColumn: columnId, keyWidth: keyWidth)
+        return max(settings.effectiveReversalThreshold(forColumn: columnId, keyWidth: keyWidth) + habitLengthOffset, 1)
     }
 
     /// Sector ring with per-column rotation+delta adjustments folded in,
@@ -126,7 +138,8 @@ class GestureAnalyzer {
         // 같은 식(`GestureSettings.recognizerRotationOffset`) — 4방향 전용 모드에서는
         // 전체 회전이 0 이고(이슈 #42) 열별 회전은 세로 라인별 보정 토글이 따로
         // 다스린다. `cardinalSnap`(첫 획 재해석)도 이 값을 쓴다.
-        settings.recognizerRotationOffset(forColumn: columnId)
+        // 버릇 맞추기의 각도는 줄 보정 위에 더한다 (손으로 맞춘 값과 따로).
+        settings.recognizerRotationOffset(forColumn: columnId) + habit.rotationDeg
     }
 
     private let hasCustomDirectionChangeThreshold: Bool
@@ -171,6 +184,15 @@ class GestureAnalyzer {
 
     func getStartPoint() -> CGPoint? {
         return touchPoints.first
+    }
+
+    /// 누른 자리에서 가장 멀리 간 거리 — 버릇 맞추기가 「긋다 만 탭」을 가르는 데 쓴다.
+    var maxDisplacementFromStart: CGFloat {
+        guard let start = touchPoints.first else { return 0 }
+        return touchPoints.reduce(0) { farthest, point in
+            let dx = point.x - start.x, dy = point.y - start.y
+            return max(farthest, sqrt(dx * dx + dy * dy))
+        }
     }
 
     private func analyzeLatestMovement() {
@@ -425,7 +447,7 @@ class GestureAnalyzer {
         var net = segments[0].vector
         var previous = segments[0].vector
         for segment in segments.dropFirst() {
-            guard Self.turnDegrees(from: previous, to: segment.vector) <= Self.curvedRunMaxTurn else { break }
+            guard Self.turnDegrees(from: previous, to: segment.vector) <= Self.curvedRunMaxTurn + habit.curveDeg else { break }
             net.dx += segment.vector.dx
             net.dy += segment.vector.dy
             previous = segment.vector
@@ -445,7 +467,7 @@ class GestureAnalyzer {
         guard segments.count == 2,
               segments[0].direction == .up || segments[0].direction == .down,
               segments[1].direction.isAdjacentTo(segments[0].direction),
-              Self.turnDegrees(from: segments[0].vector, to: segments[1].vector) <= Self.curvedVerticalStartMaxTurn
+              Self.turnDegrees(from: segments[0].vector, to: segments[1].vector) <= Self.curvedVerticalStartMaxTurn + habit.curveDeg
         else { return segments }
         let net = CGVector(dx: segments[0].vector.dx + segments[1].vector.dx,
                            dy: segments[0].vector.dy + segments[1].vector.dy)

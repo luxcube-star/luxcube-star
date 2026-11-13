@@ -264,6 +264,18 @@ class KeyboardViewModel: ObservableObject {
         return PredictionEngine(model: loaded.model)
     }()
     private var predictionStoreWritable = true
+
+    // MARK: Gesture habit (긋기 버릇 맞추기, 개선 방안 13번)
+
+    /// 맞춘 값 파일을 읽고 쓸지. 기본 `.off` — 테스트가 기기에 쌓인 값에 흔들리지 않게 한다.
+    /// 키보드 컨트롤러가 `.readWrite`, 앱 미리보기(긋기 실시간 테스트)가 `.readOnly` 로 바꾼다.
+    enum GestureHabitPersistence { case off, readOnly, readWrite }
+    var gestureHabitPersistence: GestureHabitPersistence = .off
+    private lazy var habitLearner: GestureHabitLearner = {
+        gestureHabitPersistence == .off ? GestureHabitLearner() : GestureHabitLearner(model: GestureHabitStore.load())
+    }()
+    private let habitTracker = GestureHabitTracker()
+    private var habitDirty = false
     /// 스페이스·엔터·문장부호를 쳐서 단어 하나가 끝났을 수 있음. 다음 갱신에서 학습한다.
     private var pendingPredictionLearn = false
     /// 마지막으로 학습(보류)한 문맥. 같은 단어를 두 번 세지 않는 데 쓴다.
@@ -347,8 +359,12 @@ class KeyboardViewModel: ObservableObject {
     weak var delegate: KeyboardViewModelDelegate?
 
     /// - Parameter predictionEngine: 테스트용 주입. 넘기면 디스크에서 읽지도, 디스크에 쓰지도 않는다.
-    init(backspaceRepeatInitialDelay: TimeInterval = 0.4, predictionEngine: PredictionEngine? = nil) {
+    init(backspaceRepeatInitialDelay: TimeInterval = 0.4, predictionEngine: PredictionEngine? = nil,
+         gestureHabitLearner: GestureHabitLearner? = nil) {
         self.backspaceRepeatInitialDelay = backspaceRepeatInitialDelay
+        if let gestureHabitLearner {
+            self.habitLearner = gestureHabitLearner
+        }
         if let predictionEngine {
             self.predictionEngine = predictionEngine
             self.predictionStoreWritable = false
@@ -664,6 +680,7 @@ class KeyboardViewModel: ObservableObject {
         // slot B 는 자음 드래그 패턴(ㅢ 등 대각선 포함)을 쓰므로 카디널 강제 OFF.
         gestureAnalyzer.columnId = 0
         gestureAnalyzer.forceCardinalOnly = false
+        gestureAnalyzer.habit = .zero
         gestureAnalyzer.reset()
         gestureAnalyzer.addPoint(point)
         slotBVowelStartPoint = point
@@ -955,6 +972,7 @@ class KeyboardViewModel: ObservableObject {
         // 백스페이스 뒤에는 직접 스페이스·엔터를 치거나 추천을 골라 다음 단어로 넘어갈 때까지 저절로 띄지 않는다.
         autoSpacePausedByBackspace = true
         if previewMode { return }
+        noteHabitDeletion()
         if typoMarkPending {
             typoMarkPending = false
             GestureDebugLog.markLastLineDeleted()
@@ -1067,6 +1085,8 @@ class KeyboardViewModel: ObservableObject {
         commitCurrent()
         // Cursor moves invalidate abbreviation context — reset trie matching state.
         abbreviationEngine.resetBuffer()
+        // 커서가 옮겨 가면 「몇 번째 글자」 기록이 맞지 않는다.
+        habitTracker.reset()
         delegate?.moveCursor(by: offset)
         scheduleAutoCapitalizationRefresh()
     }
@@ -1232,18 +1252,22 @@ class KeyboardViewModel: ObservableObject {
             case .consonant(let consonant):
                 gestureAnalyzer.columnId = KeyboardMetrics.columnIndex(for: consonant)
                 gestureAnalyzer.forceCardinalOnly = false
+                gestureAnalyzer.habit = habitAdjustment(for: consonant)
             case .vowelPrimitive:
                 // ㅣ/ㅡ 키는 4방향 파생모음만 쓰므로 카디널 스냅으로 인식해
                 // 기운 긋기(↖↗↙↘)가 의도한 ←→↑↓ 로 가게 한다.
                 gestureAnalyzer.columnId = 0
                 gestureAnalyzer.forceCardinalOnly = true
+                gestureAnalyzer.habit = .zero
             default:
                 gestureAnalyzer.columnId = 0
                 gestureAnalyzer.forceCardinalOnly = false
+                gestureAnalyzer.habit = .zero
             }
         } else {
             gestureAnalyzer.columnId = 0
             gestureAnalyzer.forceCardinalOnly = false
+            gestureAnalyzer.habit = .zero
         }
         gestureAnalyzer.reset()
         gestureAnalyzer.addPoint(point)
@@ -1459,6 +1483,7 @@ class KeyboardViewModel: ObservableObject {
             if directions.isEmpty {
                 // No gesture - treat as tap
                 inputConsonant(consonant)
+                noteHabitSample(key: consonant, vowel: nil, directions: [])
             } else {
                 // Gesture completed - input consonant + vowel
                 inputConsonant(consonant)
@@ -1469,6 +1494,7 @@ class KeyboardViewModel: ObservableObject {
                 if let vowel {
                     inputVowel(vowel)
                 }
+                noteHabitSample(key: consonant, vowel: vowel, directions: directions)
                 debugLog(keyLabel: String(describing: consonant),
                          result: vowel.map { String($0.compatibilityCharacter) } ?? "(무효)")
             }
@@ -1497,6 +1523,62 @@ class KeyboardViewModel: ObservableObject {
             break
         }
     }
+
+    // MARK: - 긋기 버릇 맞추기 (개선 방안 13번)
+
+    /// 이 자음 키에 맞춘 값. 설정을 끄면 맞춘 값도 쓰지 않는다.
+    private func habitAdjustment(for consonant: Choseong) -> GestureHabitAdjustment {
+        guard KeyboardSettings.shared.gestureHabitEnabled else { return .zero }
+        return habitLearner.adjustment(for: consonant)
+    }
+
+    /// 자음 키 긋기 · 탭 하나를 남긴다 (숫자만). 만든 글자의 자리는 다음 갱신에서 정한다.
+    private func noteHabitSample(key: Choseong, vowel: Jungseong?, directions: [GestureDirection]) {
+        guard !previewMode, KeyboardSettings.shared.gestureHabitEnabled else { return }
+        habitTracker.note(GestureHabitSample(
+            key: key, vowel: vowel, directions: directions,
+            maxDisplacement: gestureAnalyzer.maxDisplacementFromStart,
+            swipeThreshold: gestureAnalyzer.effectiveThreshold))
+    }
+
+    /// 지우기 직전 — 지운 글과 다시 친 글을 맞대어 보려고 지우기 전 문맥을 잡아 둔다.
+    private func noteHabitDeletion() {
+        guard KeyboardSettings.shared.gestureHabitEnabled else { return }
+        habitTracker.noteDeletion(before: delegate?.textBeforeCursor())
+    }
+
+    /// 문맥이 바뀐 뒤 — 지우고 다시 친 글이 끝났으면 오타 하나로 센다.
+    private func tickGestureHabit(before: String?) {
+        guard KeyboardSettings.shared.gestureHabitEnabled else { return }
+        guard let pair = habitTracker.tick(before: before, composerIdle: composer.state == .empty),
+              let observation = GestureHabitLearner.classify(wrong: pair.wrong, correct: pair.correct) else { return }
+        let event = habitLearner.record(observation)
+        habitDirty = true
+        // 한 걸음 맞췄으면 바로 저장한다 — 키보드가 닫히기 전에 꺼져도 맞춘 값이 남게.
+        if event != nil, gestureHabitPersistence == .readWrite {
+            habitDirty = false
+            GestureHabitStore.save(habitLearner.model)
+        }
+    }
+
+    /// 키보드가 닫힐 때: 센 것 · 맞춘 것을 저장하고, 짝짓기 기록을 비운다.
+    private func flushGestureHabit() {
+        habitTracker.reset()
+        guard habitDirty, gestureHabitPersistence == .readWrite else { return }
+        habitDirty = false
+        GestureHabitStore.save(habitLearner.model)
+    }
+
+    /// 앱 「입력 기록 보드」에서 되돌리기 · 처음으로를 누른 것을 반영한다.
+    private func applyPendingGestureHabitEdits() {
+        guard !previewMode, gestureHabitPersistence == .readWrite else { return }
+        let edits = GestureHabitStore.loadEdits()
+        guard !edits.isEmpty, habitLearner.apply(edits: edits) else { return }
+        GestureHabitStore.save(habitLearner.model)
+    }
+
+    /// 테스트용 — 지금 맞춘 값 · 센 수.
+    var gestureHabitModel: GestureHabitModel { habitLearner.model }
 
     // MARK: - Gesture preview text (완성될 글자)
 
@@ -1568,7 +1650,9 @@ class KeyboardViewModel: ObservableObject {
     func refreshPredictions() {
         guard !previewMode else { return }
         let settings = KeyboardSettings.shared
-        let before = delegate?.textBeforeCursor() ?? ""
+        let rawBefore = delegate?.textBeforeCursor()
+        tickGestureHabit(before: rawBefore)
+        let before = rawBefore ?? ""
 
         // 보류한 단어 뒤에 다른 글자를 쳤다(또는 문맥이 바뀌었다) — 이제 오타로 지울 일이 없으니 배운다.
         if let held = heldPrediction {
@@ -1625,6 +1709,7 @@ class KeyboardViewModel: ObservableObject {
     /// 메인 앱 「학습 내용」 화면에서 넣고·고치고·지운 것(단어 · 구절)을 반영한다. 키보드가 뜰 때마다 부른다.
     /// 지우기 요청을 먼저 반영한다 — 지운 뒤 넣은 단어가 늦게 온 지우기에 함께 지워지지 않게.
     func applyPendingPredictionEdits() {
+        applyPendingGestureHabitEdits()
         let settings = KeyboardSettings.shared
         // 추천도 학습도 끈 사용자는 학습 파일을 읽지 않는다 — 요청은 파일에 남아 켤 때 반영된다.
         guard !previewMode, settings.predictionEnabled || settings.predictionLearningEnabled else { return }
@@ -1742,6 +1827,7 @@ class KeyboardViewModel: ObservableObject {
 
     /// 키보드가 닫힐 때: 보류한 단어를 배우고, 미뤄 둔 저장(또는 효과 측정 숫자)을 바로 저장한다.
     func flushPredictionSave() {
+        flushGestureHabit()
         commitHeldPrediction()
         let pending = predictionSaveWorkItem != nil
         predictionSaveWorkItem?.cancel()
@@ -2157,6 +2243,7 @@ class KeyboardViewModel: ObservableObject {
         guard let vc = delegate as? KeyboardViewController else { return }
         let before = vc.textDocumentProxy.documentContextBeforeInput ?? ""
         if before.isEmpty { return }
+        noteHabitDeletion()
 
         // Find the last word boundary (space, newline, or punctuation)
         let trimmed = before.hasSuffix(" ") ? String(before.dropLast()) : before
