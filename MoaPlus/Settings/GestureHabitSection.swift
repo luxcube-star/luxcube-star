@@ -61,6 +61,11 @@ struct GestureHabitSection: View {
             NavigationLink("처음 맞추기 — 문장을 쳐서 버릇 재기") {
                 GestureCalibrationView()
             }
+            if !(board.model?.keys.isEmpty ?? true) {
+                NavigationLink("키마다 그림으로 보기") {
+                    GestureHabitKeysView()
+                }
+            }
             if board.pendingCalibration {
                 Text("처음 맞추기 결과를 남겼습니다. 키보드를 열면 반영됩니다.")
                     .font(.footnote).foregroundColor(.secondary)

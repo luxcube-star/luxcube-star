@@ -803,6 +803,9 @@ v2.2.5 까지 ↗/↘ 를 꺼도 ㅣ/ㅡ 가 들어갔다 — `normalizedDirecti
 - 결과를 보여 주고 「넣기」를 눌러야 `GestureHabitEdit.calibrate(keys:)` 요청을 남긴다. 키보드가 반영할 때 앞 값 · 쌓이던 오타를 지우고
   키 · 손잡이마다 `GestureHabitEvent(fromCalibration: true)` 한 줄씩 넣어 줄마다 되돌릴 수 있다. 그 뒤는 13번이 이어서 고친다.
   가드 `GestureCalibrationTests`
+- 「키마다 그림으로 보기」(`GestureHabitKeysView`, 사용자 결정 2026-11-15): 맞춘 값 있는 키마다 `DirectionPieChart.keySlices`
+  (분석기와 같은 식 — `recognizerRotationOffset(forColumn:)` + 줄 ㅣ/ㅡ 폭 + 버릇 각도, 4방향이면 90° 넷) + 버릇을 뺀 경계 점선(`referenceBoundaries`).
+  줄은 `KeyboardMetrics.columnIndex(for:)`. 분석기의 구역 식을 바꾸면 이 그림도 맞출 것
 
 ### 멈추면 저절로 띄기 (새모아, 2026-11-11 사용자 결정)
 - 한글을 친 뒤 `KeyboardViewModel.autoSpaceDelay`(1초 고정) 동안 키를 안 누르면 `inputSpace()` 를 그대로 부른다 — 조합 끝내기 · 단축어 · 단어 학습 · 스페이스 두 번 → 마침표가 직접 친 스페이스와 같게 돈다.

@@ -146,6 +146,8 @@ struct ColumnCorrectionDetailView: View {
 struct DirectionPieChart: View {
     let slices: [PieSlice]
     var rotationLabel: String? = nil
+    /// 점선으로 겹쳐 그릴 경계 (수학 각도, 0°=오른쪽 · 반시계). 「새모아가 맞춘 것」 그림이 버릇 각도를 뺀 경계를 보인다.
+    var referenceBoundaries: [Double] = []
 
     struct PieSlice {
         let mathStart: Double  // degrees, math coords (0°=right, CCW)
@@ -234,6 +236,16 @@ struct DirectionPieChart: View {
                     path.closeSubpath()
                     context.fill(path, with: .color(s.color))
                     context.stroke(path, with: .color(s.color.opacity(0.5)), lineWidth: 0.5)
+                }
+
+                // 점선 경계 (버릇 각도를 빼고 본 경계 등)
+                for boundary in referenceBoundaries {
+                    let rad = -boundary * .pi / 180
+                    var line = Path()
+                    line.move(to: center)
+                    line.addLine(to: CGPoint(x: cx + radius * CGFloat(cos(rad)), y: cy + radius * CGFloat(sin(rad))))
+                    context.stroke(line, with: .color(Color(.secondaryLabel)),
+                                   style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
                 }
 
                 // Center dot
@@ -326,6 +338,33 @@ extension DirectionPieChart {
                                iDelta: iDelta, euDelta: euDelta)
         let fixedLabels = ["ㅏ", nil, "ㅗ", nil, "ㅓ", nil, "ㅜ", nil]
 
+        return bases.enumerated().map { i, b in
+            PieSlice(
+                mathStart: b.start, mathEnd: b.end,
+                label: fixedLabels[i] ?? labelForMapping(b.mapping, symbol: b.symbol),
+                color: directionColors[i]
+            )
+        }
+    }
+
+    /// 한 자음 키가 실제로 가르는 구역 — 방향 설정 · 전체 회전 · 세로 줄 보정 · 그 키의 버릇 각도를 모두 더한다
+    /// (`GestureAnalyzer.effectiveSectors` · `effectiveRotationOffset` 과 같은 식). 4방향 전용이면 90° 네 칸.
+    static func keySlices(settings: KeyboardSettings, columnId: Int, habitRotation: Double) -> [PieSlice] {
+        let gesture = settings.gestureSettings
+        let profile = gesture.swipeProfile
+        let rotation = gesture.recognizerRotationOffset(forColumn: columnId) + habitRotation
+        if profile.fourWayMode {
+            let labels = ["ㅏ", "ㅗ", "ㅓ", "ㅜ"]
+            let colors = [vowelColors["ㅏ"]!, vowelColors["ㅗ"]!, vowelColors["ㅓ"]!, vowelColors["ㅜ"]!]
+            return (0..<4).map { i in
+                let center = Double(i) * 90 + rotation
+                return PieSlice(mathStart: center - 45, mathEnd: center + 45, label: labels[i], color: colors[i])
+            }
+        }
+        let bases = baseSlices(sectors: profile.sectors, profile: profile, rotationOffset: rotation,
+                               iDelta: gesture.verticalIWidthDelta(forColumn: columnId),
+                               euDelta: gesture.horizontalEuWidthDelta(forColumn: columnId))
+        let fixedLabels = ["ㅏ", nil, "ㅗ", nil, "ㅓ", nil, "ㅜ", nil]
         return bases.enumerated().map { i, b in
             PieSlice(
                 mathStart: b.start, mathEnd: b.end,
