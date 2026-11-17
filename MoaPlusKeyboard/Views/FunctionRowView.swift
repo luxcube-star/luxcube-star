@@ -29,9 +29,10 @@ struct FunctionRowView: View {
     var onSlotBVowelGestureStart: ((CGPoint) -> Void)? = nil
     var onSlotBVowelGestureMove: ((CGPoint) -> Void)? = nil
     var onSlotBVowelGestureEnd: (() -> Void)? = nil
+    /// 줄 높이 — 키보드는 자음 키와 같은 높이(`KeyboardMetrics.keyHeight(for:)`)를 넘긴다.
+    var height: CGFloat = KeyboardMetrics.functionRowHeight
 
     private let spacing: CGFloat = KeyboardMetrics.keySpacing
-    private let height: CGFloat = KeyboardMetrics.functionRowHeight
 
     /// Label for the 한글-or-ABC / !#1 toggle.
     /// In symbol mode, shows the target letter mode (한글/ABC) the user will return to.

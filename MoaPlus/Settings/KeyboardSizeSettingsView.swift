@@ -117,7 +117,7 @@ struct KeyboardSizeSettingsView: View {
             } header: {
                 Text("키보드 높이")
             } footer: {
-                Text("아이폰 기준 키보드 본체 \(Int(resolvedPhoneHeight))pt (키 한 행 \(Int(resolvedKeyHeight))pt). 하단 여백은 여기에 더해집니다 — 지금 설정으로 전체 \(Int(resolvedPhoneHeight + resolvedBottomInset))pt 입니다. 아이패드는 화면 크기에 맞춘 높이에 같은 배율이 적용됩니다. 너무 낮추면 키가 작아져 오타가 늘 수 있습니다.")
+                Text("아이폰 기준 키보드 본체 \(Int(resolvedPhoneHeight))pt (키 한 줄 \(Int(resolvedKeyHeight))pt — 자음 키 네 줄과 스페이스바 줄이 같은 높이). 하단 여백은 여기에 더해집니다 — 지금 설정으로 전체 \(Int(resolvedPhoneHeight + resolvedBottomInset))pt 입니다. 아이패드는 화면 크기에 맞춘 높이에 같은 배율이 적용됩니다. 너무 낮추면 키가 작아져 오타가 늘 수 있습니다.")
             }
 
             Section {

@@ -373,6 +373,9 @@ Row 3: ⇧ z x c v b n m ⌫        (9키, shift+letter+backspace)
 
 ### Function Row
 `[🌐] [123/한글] [한/영] [space (drag→커서)] [긋기 펑크] [⏎]`
+- **높이 = 자음 키와 같음** (사용자 결정 2026-11-17): `KeyboardMetrics.keyHeight(for:)` 가 키보드 높이(후보 바 · 하단 여백 뺀 것)를 그리드 4줄 + 기능행 = **5줄로 똑같이** 나누고
+  `FunctionRowView(height:)` 에 넘긴다. 높이 배율을 바꾸면 다섯 줄이 같이 변한다(100% = 47.2pt). 예전엔 기능행 44pt 고정이라 배율을 올리면 자음 키만 커졌다.
+  키보드 전체 높이 식은 그대로. `functionRowHeight`(44)는 높이를 안 넘기는 미리보기 · 검사 기본값으로만 남음
 - 지구본(🌐): **설정 토글 없이 `viewModel.canSwitchInputMode`(= iOS `needsInputModeSwitchKey`)만으로 표시**
   (v2.2.6, 리뷰 대응으로 최소 iOS 18 하향과 함께). iOS 26 아이폰은 시스템이 키보드 아래에 지구본 바를 그려
   `false` → 미표시(중복 방지). 아이패드·홈 버튼 아이폰·구버전 iOS 는 `true` → 항상 표시 — 예전 기본 OFF 토글은

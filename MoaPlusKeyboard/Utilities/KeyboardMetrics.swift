@@ -62,7 +62,8 @@ enum KeyboardMetrics {
     // Width ratio for action keys (backspace/return) relative to total width
     static let actionKeyWidthRatio: CGFloat = 0.20
 
-    // Function row
+    // Function row — 예전 고정 높이. 지금은 기능행도 자음 키와 같은 높이(`keyHeight(for:)`)를 쓰고,
+    // 이 값은 높이를 받지 않는 미리보기 · 검사의 기본값으로만 남는다 (사용자 결정 2026-11-17).
     static let functionRowHeight: CGFloat = 44
 
     // Keyboard height
@@ -235,9 +236,11 @@ enum KeyboardMetrics {
     }
 
     // Calculate key height based on available space
+    /// 그리드 네 줄과 기능행(스페이스바 줄)이 높이를 **똑같이** 나눈다 (사용자 결정 2026-11-17 — 예전에는 기능행 44pt 고정에
+    /// 나머지를 네 줄이 나눠, 높이 배율을 올리면 자음 키만 커졌다). 기능행도 이 값을 쓴다. 간격 = 줄 사이 4 + 위아래 2.
     static func keyHeight(for totalHeight: CGFloat) -> CGFloat {
-        let availableHeight = totalHeight - functionRowHeight - keySpacing * CGFloat(gridRows + 2)
-        return availableHeight / CGFloat(gridRows)
+        let availableHeight = totalHeight - keySpacing * CGFloat(gridRows + 2)
+        return availableHeight / CGFloat(gridRows + 1)
     }
 
     // Get key width for specific column and row (legacy: assumes 7-col Korean/symbol grid)

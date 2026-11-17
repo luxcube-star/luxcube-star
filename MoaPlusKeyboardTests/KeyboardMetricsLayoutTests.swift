@@ -355,6 +355,20 @@ final class KeyboardMetricsLayoutTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(KeyboardMetrics.keyHeight(for: minHeight), 38)
     }
 
+    /// 자음 키 네 줄과 기능행(스페이스바 줄)이 높이를 똑같이 나눈다 — 배율을 바꾸면 다섯 줄이 같이 커지고
+    /// 작아진다 (사용자 결정 2026-11-17). 예전에는 기능행 44pt 고정이라 배율을 올리면 자음 키만 커졌다.
+    func testKeyHeight_fiveRowsShareHeightEqually() {
+        for scale in [0.85, 1.0, 1.15, 1.35] {
+            let total = KeyboardMetrics.keyboardHeight(
+                isPad: false, isLandscape: false, screenShort: 390, screenLong: 844, scale: scale)
+            let row = KeyboardMetrics.keyHeight(for: total)
+            let spacings = KeyboardMetrics.keySpacing * CGFloat(KeyboardMetrics.gridRows + 2)
+            XCTAssertEqual(row * CGFloat(KeyboardMetrics.gridRows + 1) + spacings, total, accuracy: 0.001)
+        }
+        XCTAssertEqual(KeyboardMetrics.keyHeight(for: 260), 47.2, accuracy: 0.001)
+        XCTAssertGreaterThan(KeyboardMetrics.keyHeight(for: 260 * 1.35), KeyboardMetrics.keyHeight(for: 260))
+    }
+
     // MARK: - iPad split decision (T6)
 
     func testIsLandscapeKeyboard_widthIsLongEdge_true() {

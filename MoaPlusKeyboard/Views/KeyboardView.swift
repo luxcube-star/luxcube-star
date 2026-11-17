@@ -97,7 +97,7 @@ struct KeyboardView: View {
     }
 
     @ViewBuilder
-    private func functionRow(totalWidth: CGFloat, showsDismissKey: Bool) -> some View {
+    private func functionRow(totalWidth: CGFloat, showsDismissKey: Bool, height: CGFloat) -> some View {
         FunctionRowView(
             totalWidth: totalWidth,
             mode: viewModel.keyboardMode,
@@ -116,7 +116,8 @@ struct KeyboardView: View {
             layoutCustomization: settings.layoutCustomization,
             onSlotBVowelGestureStart: { viewModel.slotBVowelGestureStarted(at: $0) },
             onSlotBVowelGestureMove: { viewModel.slotBVowelGestureMoved(to: $0) },
-            onSlotBVowelGestureEnd: { viewModel.slotBVowelGestureEnded() }
+            onSlotBVowelGestureEnd: { viewModel.slotBVowelGestureEnded() },
+            height: height
         )
     }
 
@@ -253,7 +254,7 @@ struct KeyboardView: View {
                 deviceInset: viewModel.bottomSafeAreaInset,
                 extra: settings.keyboardExtraBottomInset)
             // 후보 바와 **똑같은 이유**로 여백도 그리드 배분에서 먼저 빼야 한다.
-            // `keyHeight(for:)` 는 주어진 높이를 4행에 전부 나눠주므로, 컨테이너만
+            // `keyHeight(for:)` 는 주어진 높이를 다섯 줄(그리드 4 + 기능행)에 전부 나눠주므로, 컨테이너만
             // 키우고 여기서 안 빼면 늘어난 높이를 키들이 흡수해 버리고 기능행은
             // 여전히 아래로 넘쳐 잘린다.
             let keyHeight = KeyboardMetrics.keyHeight(
@@ -310,11 +311,13 @@ struct KeyboardView: View {
                                 }
                             }
                             functionRow(totalWidth: geometry.size.width,
-                                        showsDismissKey: dismissKeyInRow && settings.showDismissKeyboardKey)
+                                        showsDismissKey: dismissKeyInRow && settings.showDismissKeyboardKey,
+                                        height: keyHeight)
                         } else {
                             keyGrid(centerKeyWidth: centerKeyWidth, keyHeight: keyHeight, totalWidth: geometry.size.width)
                             functionRow(totalWidth: geometry.size.width,
-                                        showsDismissKey: dismissKeyInRow && settings.showDismissKeyboardKey)
+                                        showsDismissKey: dismissKeyInRow && settings.showDismissKeyboardKey,
+                                        height: keyHeight)
                         }
                     }
                     .padding(KeyboardMetrics.keySpacing)
