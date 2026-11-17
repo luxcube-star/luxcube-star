@@ -802,9 +802,12 @@ v2.2.5 까지 ↗/↘ 를 꺼도 ㅣ/ㅡ 가 들어갔다 — `normalizedDirecti
   미리보기는 `gestureHabitPersistence: .off`(맞춘 값 없이 잼) · 입력 대리자 `hostAllowsLearning` false(연습 문장을 추천에 안 배움).
   미리보기는 `matchesRealKeyboardSize`(사용자 결정 1가) — 화면 맨 아래 · 폭 가득 · 높이는 익스텐션과 같은 식(기기 높이 × 배율 + 추천 바 + 하단 여백),
   모서리 · 테두리 없음. 키 크기 · 자리가 달라 각도 · 길이를 다르게 재지 않게. 실제 키보드 밑 지구본 · 마이크 줄 몫은
-  `DeviceSafeArea.calibrationKeyboardLift` 만큼 올려 맞춘다 — 익스텐션이 잰 「키보드 아래 끝 ~ 화면 아래 끝」(`measuredKeyboardBottomGap`,
-  `KeyboardViewController.measuredBottomGap`, 리포트 「키보드 실측」 줄 `화면아래까지`) − 앱 창 아래 여백, 없으면 사진 실측 38pt
-  (2026-11-17 402pt · iOS 26 사진 두 장: 키 크기 같고 처음 맞추기가 약 38pt 낮았음). 익스텐션의 화면 좌표가 바른지는 실기기 미확인.
+  `DeviceSafeArea.calibrationKeyboardLift` 만큼 올려 맞춘다 — **사진 실측 고정값 41pt**(2026-11-17 iPhone 14 Pro Max · iOS 27.0.1 원본 픽셀:
+  실제 키보드 아래 끝 ~ 화면 아래 끝 약 75pt − 앱 아래 여백 34pt), 아이패드 · 홈 버튼 아이폰(화면 비율 2 미만)은 0.
+  익스텐션이 잰 「키보드 아래 끝 ~ 화면 아래 끝」(`measuredKeyboardBottomGap`, `KeyboardViewController.measuredBottomGap`, 리포트
+  「키보드 실측」 줄 `화면아래까지`)은 실기기에서 「모름」으로 와서(같은 날) 판독용으로만 남는다 — 올리는 양에 다시 쓰지 말 것.
+  홈 버튼 여부를 앱 창 여백(`likelyNeedsGlobeKey`)으로 가르지 말 것 — 창을 못 찾으면 0 으로 읽혀 올리지 않는다(같은 날 사진 0pt 로 보임).
+  iOS 가 지구본 줄 높이를 바꾸면 사진으로 다시 잴 것.
 - 뷰모델 `onConsonantGestureMeasured`(앱에서만 nil 아님)가 자음 키 긋기 · 탭마다 `GestureCalibrationSample`(뗀 자리까지 벡터 · 획 벡터 ·
   미끄러진 거리 · 되돌아온 거리 · 문턱 · 줄 회전)을 넘긴다. `GestureCalibrator` 가 문장의 기대 차례(첫소리 긋기 · 받침 낱자 탭)에서
   같은 키를 3칸 앞까지 찾아 짝짓는다 — 틀린 긋기도 잰다(지우지 말고 이어 치게 안내).

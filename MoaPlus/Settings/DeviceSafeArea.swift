@@ -47,15 +47,18 @@ enum DeviceSafeArea {
 
     /// 처음 맞추기 키보드를 실제 키보드 자리로 올릴 양 (사용자 결정 2026-11-17 가).
     /// 실제 키보드는 iOS 가 밑에 그리는 지구본 · 마이크 줄만큼 화면 아래에서 떠 있고, 앱 화면은 홈 표시줄 자리만큼 떠
-    /// 있으므로 그 차이만큼 올린다. 익스텐션이 잰 값이 없으면 사진 실측(2026-11-17, 402pt 아이폰 · iOS 26 — 약 38pt)을
-    /// 쓰되, 지구본 줄이 없을 기기(아이패드 · 홈 버튼 아이폰)는 0.
+    /// 있으므로 그 차이만큼 올린다. 양은 사진 실측 고정값 41pt(2026-11-17, iPhone 14 Pro Max · iOS 27.0.1 원본 픽셀:
+    /// 실제 키보드 아래 끝 ~ 화면 아래 끝 약 75pt − 앱 아래 여백 34pt). 익스텐션이 잰 「화면아래까지」는 실기기에서 「모름」으로
+    /// 와서(같은 날 리포트) 쓰지 않는다 — 리포트 판독용으로만 남는다.
+    /// 지구본 줄이 없는 기기(아이패드 · 홈 버튼 아이폰)는 0. 홈 버튼 여부는 앱 창 여백이 아니라 화면 비율로 가른다
+    /// (창을 못 찾으면 여백이 0 으로 읽혀 홈 버튼 폰으로 오인 — 같은 날 사진에서 0 이 됐던 길로 보임). 홈 버튼 아이폰 ≈ 1.78,
+    /// 홈 버튼 없는 아이폰 ≥ 2.16.
     static var calibrationKeyboardLift: CGFloat {
         guard UIDevice.current.userInterfaceIdiom == .phone else { return 0 }
-        let app = keyWindowBottomInset ?? 0
-        if let gap = KeyboardSettings.shared.measuredKeyboardBottomGap {
-            return max(0, CGFloat(gap) - app)
-        }
-        return likelyNeedsGlobeKey ? 0 : 38
+        let bounds = UIScreen.main.bounds
+        let short = min(bounds.width, bounds.height)
+        guard short > 0, max(bounds.width, bounds.height) / short >= 2 else { return 0 }
+        return 41
     }
 
     private static var keyWindowBottomInset: CGFloat? {
