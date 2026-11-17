@@ -278,6 +278,39 @@ final class GestureHabitTests: XCTestCase {
             XCTAssertEqual(a.finalizeGesture().first, direction(angle: degrees, habit: .zero))
         }
     }
+
+    // MARK: 쌓이는 중 · 상세 기록 한 줄 (사용자 결정 2026-11-17 1가 · 2가)
+
+    func testObservation_counterKeyRoundTrips() {
+        let observation = GestureHabitObservation(key: "ㅉ", axis: .angle, sign: -1)
+        XCTAssertEqual(observation.counterKey, "ㅉ|angle|-")
+        XCTAssertEqual(GestureHabitObservation(counterKey: observation.counterKey), observation)
+        XCTAssertNil(GestureHabitObservation(counterKey: "ㅉ|angle"))
+        XCTAssertNil(GestureHabitObservation(counterKey: "ㅉ|nope|+"))
+    }
+
+    func testPendingCounters_showUntilStep() {
+        let learner = GestureHabitLearner()
+        let observation = GestureHabitObservation(key: "ㄱ", axis: .angle, sign: -1)
+        for _ in 0..<3 { learner.record(observation) }
+        XCTAssertEqual(learner.model.pendingCounters.map(\.count), [3])
+        XCTAssertEqual(learner.model.pendingCounters.first?.observation, observation)
+        learner.record(observation); learner.record(observation)
+        XCTAssertTrue(learner.model.pendingCounters.isEmpty)
+    }
+
+    func testLogLine_vowelsOnly_andStep() {
+        let observation = GestureHabitObservation(key: "ㅉ", axis: .angle, sign: -1)
+        let wrong = GestureHabitSample(key: .ㅉ, vowel: .ㅘ, directions: [.up, .right], maxDisplacement: 50, swipeThreshold: 20)
+        let correct = GestureHabitSample(key: .ㅉ, vowel: .ㅗ, directions: [.up], maxDisplacement: 50, swipeThreshold: 20)
+        XCTAssertEqual(GestureHabitLearner.logLine(observation: observation, wrong: wrong, correct: correct, count: 3, event: nil),
+                       "[버릇] ㅉ 키 · 각도 · 반시계 쪽으로 기욺 3/5 · ㅘ → ㅗ")
+        let event = GestureHabitEvent(id: 1, date: Date(), key: "ㅉ", knob: .angle, delta: 2)
+        XCTAssertTrue(GestureHabitLearner.logLine(observation: observation, wrong: wrong, correct: correct, count: 5, event: event)
+            .hasSuffix("5/5 · ㅘ → ㅗ ⇒ 맞춤 각도 +2°"))
+        XCTAssertTrue(GestureHabitLearner.logLine(observation: observation, wrong: wrong, correct: correct, count: 5, event: nil)
+            .hasSuffix("⇒ 한도라 더 못 맞춤"))
+    }
 }
 
 /// 실제 입력 경로 (자음 키 긋기 → 지우기 → 다시 긋기 → 스페이스) 로 센다 — 뷰모델 연결 가드.

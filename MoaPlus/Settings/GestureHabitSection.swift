@@ -57,6 +57,16 @@ struct GestureHabitSection: View {
                     Spacer()
                     Text("\(model.observedCount)번").foregroundColor(.secondary)
                 }
+                // 쌓이는 중 (사용자 결정 2026-11-17 2가) — 5번이 되면 한 걸음 맞춘다.
+                ForEach(model.pendingCounters, id: \.observation.counterKey) { item in
+                    HStack {
+                        Text("\(item.observation.key) 키 · \(item.observation.displayLabel)")
+                        Spacer()
+                        Text("쌓이는 중 \(item.count)/\(GestureHabitLearner.stepThreshold)")
+                            .foregroundColor(.secondary)
+                    }
+                    .font(.callout)
+                }
             }
             NavigationLink("처음 맞추기 — 문장을 쳐서 버릇 재기") {
                 GestureCalibrationView()
@@ -98,7 +108,7 @@ struct GestureHabitSection: View {
         } header: {
             Text("새모아가 맞춘 것")
         } footer: {
-            Text("같은 자음 키에서 모음이 잘못 들어가 지우고 다시 그은 일이 5번 쌓이면, 그 키의 긋기 각도(2°씩 10°까지) · 길이 · 휨 · 최소 길이를 스스로 조금씩 맞춥니다. 친 글은 남기지 않고 키 · 숫자만 이 기기에 둡니다. 「처음 맞추기」는 정해 준 문장을 치게 해 처음 값을 잽니다. 전체 접근 허용이 꺼져 있으면 키보드 안에서는 맞춰지지만 여기에는 보이지 않고, 처음 맞추기 결과도 키보드에 닿지 않습니다.")
+            Text("같은 자음 키에서 모음이 잘못 들어가 지우고 다시 그은 일이 5번 쌓이면, 그 키의 긋기 각도(2°씩 10°까지) · 길이 · 휨 · 최소 길이를 스스로 조금씩 맞춥니다. 친 글은 남기지 않고 키 · 숫자만 이 기기에 둡니다. 「쌓이는 중」은 아직 맞추기 전에 센 오타입니다. 「제스처 상세 기록」을 켜 두면 셀 때마다 어떤 오타(틀린 모음 → 다시 그은 모음)였는지 그 기록에 한 줄 남습니다. 「처음 맞추기」는 정해 준 문장을 치게 해 처음 값을 잽니다. 전체 접근 허용이 꺼져 있으면 키보드 안에서는 맞춰지지만 여기에는 보이지 않고, 처음 맞추기 결과도 키보드에 닿지 않습니다.")
         }
         .onAppear { board.reload() }
         .confirmationDialog("맞춘 것을 모두 처음으로 되돌릴까요?", isPresented: $confirmingReset, titleVisibility: .visible) {

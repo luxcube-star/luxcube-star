@@ -1570,7 +1570,13 @@ class KeyboardViewModel: ObservableObject {
         guard KeyboardSettings.shared.gestureHabitEnabled else { return }
         guard let pair = habitTracker.tick(before: before, composerIdle: composer.state == .empty),
               let observation = GestureHabitLearner.classify(wrong: pair.wrong, correct: pair.correct) else { return }
+        let count = (habitLearner.model.counters[observation.counterKey] ?? 0) + 1
         let event = habitLearner.record(observation)
+        // 어떤 오타를 세어 무엇을 맞췄는지 제스처 상세 기록에 한 줄 (사용자 결정 2026-11-17 1가 — 모음만). 진짜 키보드(.readWrite)에서만 — 앱 미리보기는 남기지 않는다.
+        if gestureHabitPersistence == .readWrite, KeyboardSettings.shared.gestureDebugLogEnabled {
+            GestureDebugLog.appendLine(GestureHabitLearner.logLine(
+                observation: observation, wrong: pair.wrong, correct: pair.correct, count: count, event: event))
+        }
         habitDirty = true
         // 한 걸음 맞췄으면 바로 저장한다 — 키보드가 닫히기 전에 꺼져도 맞춘 값이 남게.
         if event != nil, gestureHabitPersistence == .readWrite {

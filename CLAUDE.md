@@ -788,6 +788,10 @@ v2.2.5 까지 ↗/↘ 를 꺼도 ㅣ/ㅡ 가 들어갔다 — `normalizedDirecti
   (「학습 내용」과 같은 방식, `applyPendingPredictionEdits` 가 함께 반영). 설정 `gestureHabitEnabled`(기본 ON, 끄면 맞춘 값도 안 씀).
 - 파일은 `gestureHabitPersistence` 가 `.readWrite`(키보드 컨트롤러) · `.readOnly`(앱 미리보기)일 때만 — 기본 `.off` 라 테스트가 기기에 쌓인 값에 흔들리지 않는다.
 - 앱: 입력 기록 보드 「새모아가 맞춘 것」(`GestureHabitSection`), 개발자 리포트 「버릇 맞추기」 줄. 가드 `GestureHabitTests` · `KeyboardViewModelGestureHabitTests`
+- 보이기 (사용자 결정 2026-11-17 1가 · 2가): 칸에 「쌓이는 중 n/5」(`GestureHabitModel.pendingCounters` — `counters` 키 `키|종류|쪽` 를
+  `GestureHabitObservation(counterKey:)` 로 거꾸로 읽음). 셀 때마다 제스처 상세 기록에 한 줄 `GestureHabitLearner.logLine` —
+  「[버릇] ㅉ 키 · 각도 · 시계 쪽으로 기욺 3/5 · ㅗ → ㅘ ⇒ 맞춤 각도 −2°」, **모음만**(글자 아님), `.readWrite`(진짜 키보드) · 기록 스위치 켬일 때만.
+  각도 쪽 이름은 사용자 손의 기울기 기준 — sign +1(다시 그은 방향이 반시계) = 시계 쪽으로 기욺 = 맞춤 −
 
 ### 처음 맞추기 (새모아, 개선 방안 15번, 2026-11-13 사용자 결정 1~9 가)
 - 앱 입력 기록 보드 「새모아가 맞춘 것」 › 「처음 맞추기」(`MoaPlus/Settings/GestureCalibrationView.swift`). 정해 준 문장 17개

@@ -144,6 +144,15 @@ struct GestureHabitModel: Codable, Equatable {
         keys[key] ?? .zero
     }
 
+    /// 아직 한 걸음이 안 된 채 쌓이는 중인 오타 — 키 순서 · 많은 것 먼저.
+    var pendingCounters: [(observation: GestureHabitObservation, count: Int)] {
+        counters.compactMap { entry -> (observation: GestureHabitObservation, count: Int)? in
+            guard entry.value > 0, let observation = GestureHabitObservation(counterKey: entry.key) else { return nil }
+            return (observation, entry.value)
+        }
+        .sorted { $0.observation.key != $1.observation.key ? $0.observation.key < $1.observation.key : $0.count > $1.count }
+    }
+
     /// 개발자 리포트 「버릇 맞추기」 줄. 키 · 숫자만 담는다.
     var diagnosticLine: String {
         let adjusted = keys.keys.sorted().compactMap { key -> String? in
@@ -206,6 +215,32 @@ struct GestureHabitObservation: Equatable {
     let key: String
     let axis: Axis
     let sign: Int
+
+    /// 세는 칸 이름 — 「키|종류|쪽」 (`GestureHabitModel.counters` 의 키).
+    var counterKey: String { "\(key)|\(axis.rawValue)|\(sign > 0 ? "+" : "-")" }
+
+    /// `counterKey` 를 거꾸로 읽는다. 모르는 꼴이면 nil.
+    init?(counterKey: String) {
+        let parts = counterKey.split(separator: "|").map(String.init)
+        guard parts.count == 3, let axis = Axis(rawValue: parts[1]), parts[2] == "+" || parts[2] == "-" else { return nil }
+        self.init(key: parts[0], axis: axis, sign: parts[2] == "+" ? 1 : -1)
+    }
+
+    init(key: String, axis: Axis, sign: Int) {
+        self.key = key
+        self.axis = axis
+        self.sign = sign
+    }
+
+    /// 사람이 읽는 종류 · 쪽 — 「각도 · 시계 쪽」 「획 수 · 많음」 「긋기가 탭이 됨」.
+    var displayLabel: String {
+        switch axis {
+        // sign +1 = 다시 그은 방향이 반시계 쪽 = 처음 그은 획이 시계 쪽으로 기울었음 (맞춤 각도 −).
+        case .angle: return "각도 · " + (sign > 0 ? "시계 쪽으로 기욺" : "반시계 쪽으로 기욺")
+        case .strokes: return "획 수 · " + (sign > 0 ? "많음" : "모자람")
+        case .minLength: return sign > 0 ? "탭이 긋기가 됨" : "긋기가 탭이 됨"
+        }
+    }
 }
 
 // MARK: - 오타 가르기 · 맞추기
@@ -269,7 +304,7 @@ final class GestureHabitLearner {
     @discardableResult
     func record(_ observation: GestureHabitObservation) -> GestureHabitEvent? {
         model.observedCount += 1
-        let counterKey = "\(observation.key)|\(observation.axis.rawValue)|\(observation.sign > 0 ? "+" : "-")"
+        let counterKey = observation.counterKey
         let count = (model.counters[counterKey] ?? 0) + 1
         guard count >= Self.stepThreshold else {
             model.counters[counterKey] = count
@@ -292,6 +327,25 @@ final class GestureHabitLearner {
             model.events.removeFirst(model.events.count - GestureHabitModel.maxEvents)
         }
         return event
+    }
+
+    /// 제스처 상세 기록 한 줄 (사용자 결정 2026-11-17 1가) — 모음만 담고 글자는 담지 않는다.
+    /// 예: 「[버릇] ㅉ 키 · 각도 · 시계 쪽으로 기욺 3/5 · ㅗ → ㅘ」, 다섯 번째면 「… 5/5 · ㅘ → ㅗ ⇒ 맞춤 각도 −2°」.
+    static func logLine(observation: GestureHabitObservation, wrong: GestureHabitSample,
+                        correct: GestureHabitSample, count: Int, event: GestureHabitEvent?) -> String {
+        func vowel(_ sample: GestureHabitSample) -> String {
+            sample.vowel.map { String($0.compatibilityCharacter) } ?? "탭"
+        }
+        var line = "[버릇] \(observation.key) 키 · \(observation.displayLabel) \(min(count, stepThreshold))/\(stepThreshold)"
+            + " · \(vowel(wrong)) → \(vowel(correct))"
+        if count >= stepThreshold {
+            if let event {
+                line += " ⇒ 맞춤 \(event.knob.displayName) \(event.knob.formatted(event.delta))"
+            } else {
+                line += " ⇒ 한도라 더 못 맞춤"
+            }
+        }
+        return line
     }
 
     /// 어느 손잡이를 어디로 돌릴지. 상한에 닿아 더 못 돌리면 nil.
