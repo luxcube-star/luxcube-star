@@ -45,6 +45,19 @@ enum DeviceSafeArea {
         KeyboardSettings.shared.measuredKeyboardBottomInset != nil
     }
 
+    /// 처음 맞추기 키보드를 실제 키보드 자리로 올릴 양 (사용자 결정 2026-11-17 가).
+    /// 실제 키보드는 iOS 가 밑에 그리는 지구본 · 마이크 줄만큼 화면 아래에서 떠 있고, 앱 화면은 홈 표시줄 자리만큼 떠
+    /// 있으므로 그 차이만큼 올린다. 익스텐션이 잰 값이 없으면 사진 실측(2026-11-17, 402pt 아이폰 · iOS 26 — 약 38pt)을
+    /// 쓰되, 지구본 줄이 없을 기기(아이패드 · 홈 버튼 아이폰)는 0.
+    static var calibrationKeyboardLift: CGFloat {
+        guard UIDevice.current.userInterfaceIdiom == .phone else { return 0 }
+        let app = keyWindowBottomInset ?? 0
+        if let gap = KeyboardSettings.shared.measuredKeyboardBottomGap {
+            return max(0, CGFloat(gap) - app)
+        }
+        return likelyNeedsGlobeKey ? 0 : 38
+    }
+
     private static var keyWindowBottomInset: CGFloat? {
         UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }

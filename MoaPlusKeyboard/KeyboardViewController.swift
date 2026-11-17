@@ -250,10 +250,26 @@ class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedback {
         let stamp = Self.diagnosticTimeFormatter.string(from: Date())
         // 메인 앱 설정/미리보기가 앱 창 값 대신 이 실측값을 쓰도록 남긴다.
         KeyboardSettings.shared.recordMeasuredBottomInset(Double(measured))
+        let gap = measuredBottomGap()
+        if let gap { KeyboardSettings.shared.recordMeasuredBottomGap(Double(gap)) }
         KeyboardSettings.shared.recordKeyboardGeometryDiagnostic(
-            String(format: "%@ bounds.h=%.1f constraint=%.1f safeArea.bottom=%.1f 여백=%.1f",
+            String(format: "%@ bounds.h=%.1f constraint=%.1f safeArea.bottom=%.1f 여백=%.1f 화면아래까지=%@",
                    stamp, view.bounds.height, heightConstraint?.constant ?? -1,
-                   measured, bottomInset()))
+                   measured, bottomInset(), gap.map { String(format: "%.1f", $0) } ?? "모름"))
+    }
+
+    /// 키보드 아래 끝에서 화면 아래 끝까지(pt) — iOS 가 밑에 그리는 지구본 · 마이크 줄 몫. 아이폰 세로에서만,
+    /// 화면 좌표로 바꿔 잰다. 익스텐션 창이 화면 어디에 있는지 바르게 알려 주는지는 실기기에서 아직 재 보지 않아
+    /// (2026-11-17) 0~150pt 밖이면 버리고, 개발자 리포트 「키보드 실측」 줄의 「화면아래까지」로 확인한다.
+    private func measuredBottomGap() -> CGFloat? {
+        guard traitCollection.userInterfaceIdiom == .phone, let window = view.window else { return nil }
+        let uiScreen = window.windowScene?.screen ?? UIScreen.main
+        let screen = uiScreen.bounds
+        guard screen.height > screen.width else { return nil }
+        let frame = view.convert(view.bounds, to: uiScreen.coordinateSpace)
+        let gap = screen.maxY - frame.maxY
+        guard gap.isFinite, gap >= 0, gap <= 150 else { return nil }
+        return gap
     }
 
     override func viewSafeAreaInsetsDidChange() {

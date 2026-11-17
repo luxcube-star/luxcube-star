@@ -124,6 +124,8 @@ struct GestureCalibrationView: View {
                         matchesRealKeyboardSize: true
                     )
                     .id(model.keyboardToken)
+                    // 실제 키보드는 밑의 지구본 · 마이크 줄만큼 더 위에 있다 — 그만큼 올려 같은 자리에 (사용자 결정 2026-11-17 가).
+                    .padding(.bottom, DeviceSafeArea.calibrationKeyboardLift)
                 }
             } else {
                 ScrollView {

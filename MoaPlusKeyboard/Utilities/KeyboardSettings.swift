@@ -47,6 +47,7 @@ final class KeyboardSettings: ObservableObject {
         static let predictionDiagnostic = "predictionDiagnostic"
         static let fullAccessDiagnostic = "fullAccessDiagnostic"
         static let keyboardMeasuredBottomInset = "keyboardMeasuredBottomInset"
+        static let keyboardMeasuredBottomGap = "keyboardMeasuredBottomGap"
         static let showGlobeKey = "showGlobeKey"
         static let showDismissKeyboardKey = "showDismissKeyboardKey"
         static let keyboardPlacement = "keyboardPlacement"
@@ -769,6 +770,17 @@ final class KeyboardSettings: ObservableObject {
 
     func recordMeasuredBottomInset(_ value: Double) {
         defaults.set(value, forKey: Keys.keyboardMeasuredBottomInset)
+    }
+
+    /// 익스텐션이 마지막으로 잰 「키보드 아래 끝 ~ 화면 아래 끝」 거리(pt, 아이폰 세로). iOS 가 키보드 밑에 그리는
+    /// 지구본 · 마이크 줄 몫이다. 처음 맞추기(15번)가 키보드를 실제 자리에 놓는 데 쓴다 (사용자 결정 2026-11-17 가).
+    /// 아직 못 쟀으면 nil.
+    var measuredKeyboardBottomGap: Double? {
+        defaults.object(forKey: Keys.keyboardMeasuredBottomGap) as? Double
+    }
+
+    func recordMeasuredBottomGap(_ value: Double) {
+        defaults.set(value, forKey: Keys.keyboardMeasuredBottomGap)
     }
 
     private func writePrimitive(_ value: Any, forKey key: String) {
