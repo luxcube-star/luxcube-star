@@ -56,16 +56,30 @@ struct PredictionStats: Codable, Equatable {
     var accepted: Int = 0
     /// 추천을 골라 직접 치지 않아도 된 글자 수 (고른 단어 글자 수 − 이미 친 글자 수).
     var savedCharacters: Int = 0
+    /// 키 입력 절약률(이송욱 2015)의 분모 — 배운 단어의 글자 수 합(추천으로 넣은 단어 포함). 2026-11-20 부터 셈.
+    var typedCharacters: Int = 0
+    /// 절약률의 분자 — `typedCharacters` 를 세기 시작한 뒤에 아낀 글자. `savedCharacters` 는 그 전 것까지 담아 비율에 못 쓴다.
+    var rateSavedCharacters: Int = 0
+    /// 구절이 하나라도 든 추천 바가 새로 나타난 횟수 (구절 확신 문턱을 정할 자료, 2026-11-20 사용자 결정 3다).
+    var phraseShown: Int = 0
+    /// 구절을 골라 넣은 횟수.
+    var phraseAccepted: Int = 0
 
     init() {}
 
-    private enum CodingKeys: String, CodingKey { case shown, accepted, savedCharacters }
+    private enum CodingKeys: String, CodingKey {
+        case shown, accepted, savedCharacters, typedCharacters, rateSavedCharacters, phraseShown, phraseAccepted
+    }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         shown = try c.decodeIfPresent(Int.self, forKey: .shown) ?? 0
         accepted = try c.decodeIfPresent(Int.self, forKey: .accepted) ?? 0
         savedCharacters = try c.decodeIfPresent(Int.self, forKey: .savedCharacters) ?? 0
+        typedCharacters = try c.decodeIfPresent(Int.self, forKey: .typedCharacters) ?? 0
+        rateSavedCharacters = try c.decodeIfPresent(Int.self, forKey: .rateSavedCharacters) ?? 0
+        phraseShown = try c.decodeIfPresent(Int.self, forKey: .phraseShown) ?? 0
+        phraseAccepted = try c.decodeIfPresent(Int.self, forKey: .phraseAccepted) ?? 0
     }
 }
 
@@ -187,6 +201,11 @@ final class PredictionEngine {
     static let maxNextWordsPerPair = 10
     /// 기억할 앞 두 단어 묶음 수.
     static let maxWordPairs = 3000
+    /// 추천에서 골라 넣은 단어를 몇 번 쓴 것으로 칠지 — 순위 점수에만 (LatinIME 옛 사용자 사전: 친 단어 1 · 고른 단어 3,
+    /// 2026-11-20 사용자 결정). 쓴 횟수 `count` 는 1 만 오른다(두 번 문턱은 그대로).
+    static let acceptedWordWeight: Double = 3
+    /// 한 단계 짧은 문맥으로 물러설 때 곱하는 값 (Stupid Backoff, Brants 2007 — 0.4).
+    static let backoffFactor: Double = 0.4
 
     private(set) var model: PredictionModel
 
@@ -286,14 +305,16 @@ final class PredictionEngine {
     ///   - previous: 같은 문장에서 바로 앞에 쓴 단어. 없으면 `nil`
     ///   - precedingWords: 같은 문장에서 이 단어 앞에 띄어 쓴 단어들 (먼 것 → 가까운 것, 마지막 = `previous`).
     ///     앞 두 단어 · 구절을 배우는 데 쓴다. 비어 있으면 `previous` 하나만 있는 것으로 본다.
+    ///   - accepted: 추천에서 골라 넣은 단어 — 순위 점수를 `acceptedWordWeight` 만큼 올린다.
     @discardableResult
-    func learn(word: String, previous: String?, precedingWords: [String] = []) -> Bool {
+    func learn(word: String, previous: String?, precedingWords: [String] = [], accepted: Bool = false) -> Bool {
         guard Self.isLearnable(word) || isManual(word) else { return false }
         model.tick += 1
+        model.stats.typedCharacters += word.count
 
         let stored = canonicalForm(of: word)
         var entry = model.words[stored] ?? PredictionWordEntry(count: 0, lastUsed: model.tick, score: 0)
-        entry.score = Self.decayedScore(entry, at: model.tick) + 1
+        entry.score = Self.decayedScore(entry, at: model.tick) + (accepted ? Self.acceptedWordWeight : 1)
         entry.count += 1
         entry.lastUsed = model.tick
         model.words[stored] = entry
@@ -726,15 +747,26 @@ final class PredictionEngine {
 
     // MARK: - Stats (효과 측정)
 
-    /// 추천 바에 후보가 새로 나타났다.
-    func recordShown() {
+    /// 추천 바에 후보가 새로 나타났다. `includesPhrase` = 후보에 구절이 하나라도 있었다.
+    func recordShown(includesPhrase: Bool = false) {
         model.stats.shown += 1
+        if includesPhrase { model.stats.phraseShown += 1 }
     }
 
     /// 추천을 골랐다. `typed` = 그때까지 친 앞부분.
     func recordAccepted(word: String, typed: String) {
         model.stats.accepted += 1
-        model.stats.savedCharacters += max(0, word.count - typed.count)
+        let saved = max(0, word.count - typed.count)
+        model.stats.savedCharacters += saved
+        model.stats.rateSavedCharacters += saved
+        if word.contains(" ") { model.stats.phraseAccepted += 1 }
+    }
+
+    /// 키 입력 절약률(%) — 아낀 글자 ÷ 배운 단어 글자 수. 아직 센 글자가 없으면 nil.
+    var keystrokeSavingPercent: Double? {
+        let s = model.stats
+        guard s.typedCharacters > 0 else { return nil }
+        return Double(s.rateSavedCharacters) / Double(s.typedCharacters) * 100
     }
 
     /// 지금 추천에 나올 수 있는 단어 수 (`minUsesToSuggest` 번 이상 쓴 단어).
@@ -745,7 +777,9 @@ final class PredictionEngine {
     /// 개발자 리포트 한 줄. 숫자만 담고 단어는 담지 않는다.
     var diagnosticLine: String {
         let s = model.stats
+        let rate = keystrokeSavingPercent.map { String(format: "%.1f%%", $0) } ?? "아직 모름"
         return "배운 단어 \(model.words.count)개(추천 가능 \(suggestableWordCount)개) / 구절 \(model.phrases.count)개 / 추천 보여 줌 \(s.shown)번 / 고름 \(s.accepted)번 / 아낀 글자 \(s.savedCharacters)자"
+            + " / 절약률 \(rate) (친 글자 \(s.typedCharacters)자 중 아낀 \(s.rateSavedCharacters)자) / 구절 보여 줌 \(s.phraseShown)번 · 고름 \(s.phraseAccepted)번"
     }
 
     // MARK: - Suggestions
@@ -768,24 +802,28 @@ final class PredictionEngine {
             return model.trigrams[Self.pairKey(beforePrevious, previous)] ?? [:]
         }()
 
+        // 다음 단어 점수 (Stupid Backoff, 2026-11-20 사용자 결정): 앞 두 단어 뒤에 쓴 적이 있으면 그 비율,
+        // 없으면 0.4 × 앞 한 단어 뒤 비율, 그것도 없으면 0.4 × 0.4 × 단어 자체 비율(감쇠 점수 기준).
+        // 한 가지 점수로 줄을 세운다 — 예전처럼 "앞 두 단어 맞은 것 먼저, 남는 칸은 앞 한 단어" 로 칸을 나누지 않는다.
+        let pairTotal = Double(pairFollowers.values.reduce(0, +))
+        let followerTotal = Double(followers.values.reduce(0, +))
+        func contextScore(_ word: String) -> Double? {
+            if let c = pairFollowers[word], pairTotal > 0 { return Double(c) / pairTotal }
+            if let c = followers[word], followerTotal > 0 { return Self.backoffFactor * Double(c) / followerTotal }
+            return nil
+        }
+
         if prefix.isEmpty {
-            func ranked(_ source: [String: Int], weight: Double) -> [String] {
-                source
-                    .compactMap { follower -> (String, Double)? in
-                        guard let entry = model.words[follower.key],
-                              entry.count >= Self.minUsesToSuggest else { return nil }
-                        return (follower.key, Double(follower.value) * weight + freshness(of: entry))
-                    }
-                    .sorted(by: Self.byScoreThenWord)
-                    .map { $0.0 }
+            // 앞 단어가 없거나 그 뒤에 쓴 단어가 없으면 비워 둔다 — 단어 자체 비율까지 물러서면 스페이스마다
+            // 많이 쓴 단어가 늘 뜬다(2026-11-20 구현 때 Claude 판단, 사용자께 여쭘).
+            var scored: [(String, Double)] = []
+            for word in Set(pairFollowers.keys).union(followers.keys) {
+                guard let entry = model.words[word], entry.count >= Self.minUsesToSuggest,
+                      let score = contextScore(word) else { continue }
+                // 같은 점수면 최근에 쓴 쪽 (감쇠 0~1 을 아주 작게 더함).
+                scored.append((word, score + freshness(of: entry) * 1e-6))
             }
-            var result: [String] = []
-            for word in ranked(pairFollowers, weight: 1) + ranked(followers, weight: 1)
-            where !result.contains(word) {
-                result.append(word)
-                if result.count == limit { break }
-            }
-            return result
+            return scored.sorted(by: Self.byScoreThenWord).prefix(limit).map { $0.0 }
         }
 
         // 문장부호 등 단어가 될 수 없는 글자가 끼어 있으면 추천하지 않는다.
@@ -796,15 +834,24 @@ final class PredictionEngine {
         guard !prefixKey.isEmpty else { return [] }
         let typed = Self.normalized(prefix)
 
-        var scored: [(String, Double)] = []
+        var candidates: [(word: String, decayed: Double)] = []
         for (word, entry) in model.words {
             guard entry.count >= Self.minUsesToSuggest,
                   !manualOnly || isManual(word),
                   let key = keyCache[word], key.count > prefixKey.count,
                   key.hasPrefix(prefixKey),
                   Self.normalized(word) != typed else { continue }
-            let followBonus = Double(followers[word] ?? 0) * 3 + Double(pairFollowers[word] ?? 0) * 5
-            scored.append((word, Self.decayedScore(entry, at: model.tick) + followBonus))
+            candidates.append((word, Self.decayedScore(entry, at: model.tick)))
+        }
+        // 단어 자체 비율의 분모 — 추천에 나올 수 있는 단어 전체의 감쇠 점수 합.
+        let unigramTotal = candidates.isEmpty ? 0 : model.words.values.reduce(0.0) { sum, entry in
+            entry.count >= Self.minUsesToSuggest ? sum + Self.decayedScore(entry, at: model.tick) : sum
+        }
+        let scored: [(String, Double)] = candidates.map { candidate in
+            // 같은 비율이면 많이 · 최근에 쓴 쪽 (감쇠 점수를 아주 작게 더함).
+            if let score = contextScore(candidate.word) { return (candidate.word, score + candidate.decayed * 1e-9) }
+            let unigram = unigramTotal > 0 ? candidate.decayed / unigramTotal : 0
+            return (candidate.word, Self.backoffFactor * Self.backoffFactor * unigram)
         }
 
         var phraseScored: [(String, Double)] = []

@@ -151,6 +151,18 @@ final class KeyboardViewModelPredictionTests: XCTestCase {
         XCTAssertEqual(engine.model.stats.savedCharacters, 3, "다섯 글자 중 두 글자는 이미 쳤다")
     }
 
+    /// 추천에서 고른 단어는 배울 때 순위 점수를 3 올린다 (2026-11-20 사용자 결정 — LatinIME 옛 사용자 사전).
+    func testAcceptPrediction_learnsWithAcceptedWeight() {
+        engine.learn(word: "안녕하세요", previous: nil)
+        delegate.text = "네 안녀"
+        viewModel.acceptPrediction("안녕하세요")
+        viewModel.refreshPredictions()
+        viewModel.flushPredictionSave()
+        let entry = engine.model.words["안녕하세요"]
+        XCTAssertEqual(entry?.count, 2, "쓴 횟수는 1 만 오른다")
+        XCTAssertGreaterThan(entry?.score ?? 0, 3.9, "직접 친 1 + 고른 3")
+    }
+
     func testAcceptPrediction_afterSpaceAppendsNextWord() {
         delegate.text = "감사 "
         viewModel.acceptPrediction("드립니다")

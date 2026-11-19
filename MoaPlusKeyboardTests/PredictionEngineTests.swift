@@ -227,7 +227,53 @@ final class PredictionEngineTests: XCTestCase {
         XCTAssertEqual(engine.model.stats.accepted, 2)
         XCTAssertEqual(engine.model.stats.savedCharacters, 3 + 4)
         XCTAssertEqual(engine.diagnosticLine,
-                       "배운 단어 1개(추천 가능 1개) / 구절 0개 / 추천 보여 줌 1번 / 고름 2번 / 아낀 글자 7자")
+                       "배운 단어 1개(추천 가능 1개) / 구절 0개 / 추천 보여 줌 1번 / 고름 2번 / 아낀 글자 7자"
+                       + " / 절약률 70.0% (친 글자 10자 중 아낀 7자) / 구절 보여 줌 0번 · 고름 0번")
+    }
+
+    // MARK: - 새 순위 (2026-11-20 사용자 결정 — Stupid Backoff · 고른 단어 3배 · 절약률 · 구절 횟수)
+
+    func testStats_phraseShownAndAccepted() {
+        let engine = PredictionEngine()
+        engine.recordShown(includesPhrase: true)
+        engine.recordShown()
+        engine.recordAccepted(word: "수고 많으셨습니다", typed: "수")
+        engine.recordAccepted(word: "수고", typed: "수")
+        XCTAssertEqual(engine.model.stats.shown, 2)
+        XCTAssertEqual(engine.model.stats.phraseShown, 1)
+        XCTAssertEqual(engine.model.stats.phraseAccepted, 1)
+        XCTAssertNil(engine.keystrokeSavingPercent, "단어를 아직 안 배웠으면 절약률은 모름")
+    }
+
+    func testNextWord_backoffRanksByOneScore() {
+        let engine = PredictionEngine()
+        // "확인 후" 뒤: 가자 1번 · 연락 9번 → 가자 비율 0.1
+        engine.learn(word: "가자", previous: nil); engine.learn(word: "연락", previous: nil)
+        engine.learn(word: "가자", previous: "후", precedingWords: ["확인", "후"])
+        for _ in 0..<9 { engine.learn(word: "연락", previous: "후", precedingWords: ["확인", "후"]) }
+        // "후" 뒤에만: 출발 10번 → 0.4 × 10/20 = 0.2
+        for _ in 0..<10 { engine.learn(word: "출발", previous: "후", precedingWords: ["식사", "후"]) }
+        XCTAssertEqual(engine.suggestions(prefix: "", previous: "후", beforePrevious: "확인"),
+                       ["연락", "출발", "가자"], "앞 두 단어가 맞아도 비율이 낮으면 앞 한 단어로 많이 쓴 단어 뒤로")
+    }
+
+    func testCompletion_contextBeatsFrequentWord() {
+        let engine = PredictionEngine()
+        engine.learn("토요일", times: 20)
+        engine.learn(word: "토지", previous: "대상")
+        engine.learn(word: "토지", previous: "대상")
+        XCTAssertEqual(engine.suggestions(prefix: "토", previous: "대상").first, "토지")
+        XCTAssertEqual(engine.suggestions(prefix: "토", previous: nil).first, "토요일")
+    }
+
+    func testAcceptedWord_weighsThreeTimes() {
+        let engine = PredictionEngine()
+        engine.learn(word: "감사합니다", previous: nil)
+        engine.learn(word: "감사합니다", previous: nil)
+        engine.learn(word: "감정평가", previous: nil)
+        engine.learn(word: "감정평가", previous: nil, accepted: true)
+        XCTAssertEqual(engine.model.words["감정평가"]?.count, 2, "쓴 횟수는 1씩")
+        XCTAssertEqual(engine.suggestions(prefix: "감", previous: nil).first, "감정평가", "고른 단어는 점수 3")
     }
 
     // MARK: - 문맥 해석

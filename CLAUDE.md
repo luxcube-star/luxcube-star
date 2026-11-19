@@ -741,6 +741,13 @@ v2.2.5 까지 ↗/↘ 를 꺼도 ㅣ/ㅡ 가 들어갔다 — `normalizedDirecti
   `discardHeldPredictionIfJustCompleted`) 오타로 보고 버린다. 다음 단어를 고치는 백스페이스는 앞 단어와 상관없다
   (`KeyboardViewModelPredictionTests`). 서명 비교를 백스페이스 **전에** 해야 한다 — 지운 뒤에는 문맥이 달라진다.
 - **두 번 쓴 단어만 추천한다** (`minUsesToSuggest = 2`, 단어 완성·다음 단어 공통). 쓴 횟수 `count` 는 줄지 않는다.
+- **순위는 한 가지 점수 — Stupid Backoff** (사용자 결정 2026-11-20, 검색 자료로만 짠 안). 앞 두 단어 뒤 비율 → 없으면 `backoffFactor`(0.4) × 앞 한 단어 뒤 비율
+  → (입력 중 단어 완성만) 0.4 × 0.4 × 단어 자체 비율(감쇠 점수 ÷ 추천 가능 단어 감쇠 합). 다음 단어(스페이스 뒤)는 단어 자체 비율까지 물러서지 않는다
+  — 스페이스마다 많이 쓴 단어가 늘 뜨게 되므로(Claude 판단). 예전 "앞 두 단어 맞은 것 먼저 · 남는 칸은 앞 한 단어"와 고정 가산점(×3 · ×5)은 없앴다.
+  구절은 따로(종전 점수 · 2칸). **추천에서 고른 단어**는 배울 때 순위 점수 +`acceptedWordWeight`(3, LatinIME 옛 사용자 사전), 쓴 횟수는 +1 그대로
+  — 뷰모델 `pendingAcceptedPredictionWord` → `heldPredictionAccepted` → `learn(accepted:)`, 고른 구절의 안쪽 단어도 3.
+  리포트 「단어 추천」 줄에 **절약률**(`rateSavedCharacters` ÷ `typedCharacters` — 배운 단어 글자 수 합, 2026-11-20 부터 셈)과 **구절 보여 줌 · 고름**
+  (구절 확신 문턱을 정할 자료, 사용자 결정 3다 — 문턱은 아직 없음). 가드 `PredictionEngineTests.testNextWord_backoffRanksByOneScore` 등
 - **추천은 4칸, 칸 폭은 단어 길이에 맞춘다** (`defaultLimit = 4`, 사용자 결정 2026-11-13). 똑같이 나누면 4칸에서 「감정평가법인」이 잘린다.
   `PredictionBarLayout.widths` 하나가 정한다 — 다 들어가면 제 폭 + 남는 폭 똑같이, 모자라면 짧은 칸은 그대로 두고 긴 칸만 같은 상한으로 줄임 (`PredictionBarLayoutTests`).
 - **순위 점수는 감쇠한다** (`score`, 반감기 `halfLife = 3000` 단어 — 시계가 아니라 배운 단어 수 `tick`).

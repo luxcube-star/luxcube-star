@@ -287,6 +287,10 @@ class KeyboardViewModel: ObservableObject {
     /// 끝났지만 아직 배우지 않은 단어. 바로 백스페이스로 지우면 오타로 보고 버리고,
     /// 다음 글자를 치거나 키보드를 닫으면 그때 배운다 (`commitHeldPrediction`).
     private var heldPrediction: (word: String, previous: String?, signature: String)?
+    /// 보류한 단어가 추천에서 골라 넣은 것인지 — 배울 때 순위 점수를 더 올린다(`PredictionEngine.acceptedWordWeight`).
+    private var heldPredictionAccepted = false
+    /// 방금 추천에서 골라 넣은 단어(구절이면 마지막 단어). 다음 갱신에서 끝난 단어가 이것이면 `heldPredictionAccepted`.
+    private var pendingAcceptedPredictionWord: String?
     /// 효과 측정 숫자가 바뀌었는데 아직 저장하지 않음. 키보드를 닫을 때 저장한다.
     private var predictionStatsDirty = false
     private var predictionRefreshScheduled = false
@@ -1651,7 +1655,7 @@ class KeyboardViewModel: ObservableObject {
     private func setPredictionSuggestions(_ suggestions: [String]) {
         guard predictionSuggestions != suggestions else { return }
         if !suggestions.isEmpty {
-            predictionEngine.recordShown()
+            predictionEngine.recordShown(includesPhrase: suggestions.contains { $0.contains(" ") })
             predictionStatsDirty = true
         }
         predictionSuggestions = suggestions
@@ -1713,11 +1717,16 @@ class KeyboardViewModel: ObservableObject {
 
     /// 방금 끝난 단어를 바로 배우지 않고 보류한다. 앞에 보류한 단어가 있으면 그것을 먼저 배운다.
     private func learnCompletedWord(in before: String) {
+        let acceptedWord = pendingAcceptedPredictionWord
+        pendingAcceptedPredictionWord = nil
         guard let completed = predictionEngine.completedWordConsideringManual(in: before),
               completed.signature != lastLearnedSignature else { return }
         commitHeldPrediction()
         lastLearnedSignature = completed.signature
         heldPrediction = completed
+        heldPredictionAccepted = acceptedWord.map {
+            PredictionEngine.normalized($0) == PredictionEngine.normalized(completed.word)
+        } ?? false
     }
 
     /// `completed` 가 직접 넣은 단어이고, 보류한 단어가 그 단어의 앞부분(같은 토큰, 사이에 공백 없음)인지.
@@ -1752,7 +1761,8 @@ class KeyboardViewModel: ObservableObject {
         // 같은 문장에서 앞에 띄어 쓴 단어들 — 앞 두 단어 · 구절을 배우는 데 쓴다.
         let preceding = predictionEngine.precedingWords(
             in: Substring(held.signature).dropLast(held.word.count), max: PredictionEngine.maxPhraseWords - 1)
-        if predictionEngine.learn(word: held.word, previous: held.previous, precedingWords: preceding) {
+        if predictionEngine.learn(word: held.word, previous: held.previous, precedingWords: preceding,
+                                  accepted: heldPredictionAccepted) {
             schedulePredictionSave()
         }
     }
@@ -1791,6 +1801,7 @@ class KeyboardViewModel: ObservableObject {
         // 바로 뒤 . , ? ! 는 이 공백을 지우고 붙인다 (개선 방안 9번, 사용자 결정 2026-11-13).
         autoSpaceJustInserted = true
         predictionEngine.recordAccepted(word: word, typed: current)
+        pendingAcceptedPredictionWord = word.split(separator: " ").last.map(String.init) ?? word
         predictionStatsDirty = true
         pendingPredictionLearn = true
         triggerHapticFeedback()
@@ -1808,7 +1819,7 @@ class KeyboardViewModel: ObservableObject {
             in: Substring(before).dropLast(current.count), max: PredictionEngine.maxPhraseWords - 1)
         var learned = false
         for inner in words.dropLast() {
-            learned = predictionEngine.learn(word: inner, previous: chain.last, precedingWords: chain) || learned
+            learned = predictionEngine.learn(word: inner, previous: chain.last, precedingWords: chain, accepted: true) || learned
             chain.append(inner)
             if chain.count > PredictionEngine.maxPhraseWords - 1 { chain.removeFirst() }
         }
