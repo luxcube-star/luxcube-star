@@ -153,8 +153,16 @@ final class FunctionRowWidthTests: XCTestCase {
                     returnLeadingX: x, layoutCustomization: customization)
                 let label = "split slotA=\(slotA) globe=\(globe) dismiss=\(dismiss)"
                 assertFits(view, label, kind: slotA == .fullPackage ? .longSpace : .default)
+                // 맞춘 엔터가 예전보다 넓어지는 자리(내림 키 없음 — 1133pt 에서 ㅍ ~ 행 끝이 예전 엔터보다 넓다)면
+                // 예전 폭 그대로 (「엔터를 줄이고」, 사용자 결정 2026-11-21).
+                let aligned = view.effectiveTotalWidth - view.dismissReservedWidth - x
+                if dismiss { XCTAssertLessThan(aligned, view.baseReturnWidth, label) }
+                guard aligned < view.baseReturnWidth else {
+                    XCTAssertNil(view.alignedReturnWidth, label)
+                    XCTAssertEqual(view.returnWidth, view.baseReturnWidth, label)
+                    continue
+                }
                 XCTAssertNotNil(view.alignedReturnWidth, label)
-                XCTAssertLessThan(view.returnWidth, view.baseReturnWidth, label)
                 // 엔터 왼쪽 끝 = 행 끝 − 내림 키 몫 − 엔터 폭 = ㅍ 왼쪽 끝.
                 let returnLeft = view.occupiedWidth - view.dismissReservedWidth - view.returnWidth
                 XCTAssertEqual(returnLeft, x, accuracy: 0.5, label)

@@ -16,3 +16,4 @@ date: 2026-11-21
 8. 케이블이 꼭 필요한지 여쭘 → Apple Mac 사용 설명서: Wi-Fi 동기화를 켜려면 처음 한 번은 케이블로 이은 뒤 「Wi-Fi 연결 시 이 기기 보기」를 켬. 이미 켜져 있어 Finder 옆 목록에 아이패드가 보이면 케이블 없이 진행
 9. 아이패드 미니: 케이블로 맥미니에 이음 → AltStore 설치 → 신뢰 · 개발자 모드(재시동) → 새모아 설치 끝냄(사용자). 아이패드 판은 엔터 폭 고치기 전 판
 10. 구현해 → 엔터 폭: KeyboardMetrics.iPadSplitReturnLeadingX(그리드 ㅍ 왼쪽 끝) · FunctionRowView.returnLeadingX/alignedReturnWidth/baseReturnWidth · KeyboardView 가 숫자패드 왼쪽일 때만 넘김. 테스트 FunctionRowWidthTests 2개 더함(iPad mini 가로 1133pt · 지구본/내림 키 4조합 · 긴 스페이스/기본). 맥미니에 Xcode 없어 컴파일 · 테스트는 GitHub Actions 로만. CLAUDE.md · CHANGELOG 적음
+11. push(044212a) → IPA 빌드 성공 · 유닛 테스트 실패. 결과 묶음(xcresult)을 zstd 로 풀어 찾음: 새 테스트 test_iPadSplitLeft_* 의 내림 키 없는 경우(dismiss=false). 셈: 1133pt 에서 ㅍ 왼쪽 끝 ≈ 796.6, 행 끝 1125 → 맞춘 엔터 328 > 예전 엔터(278 · 넓은 ⌫ 배치 312) → 코드는 「예전보다 넓으면 그대로」로 물러나는데 테스트는 맞춤을 기대. 테스트를 고침(내림 키 있으면 맞춤, 없으면 예전 폭). ★ 함정: 로그에 실패 테스트 이름이 안 남음 — xcresult 를 zstd -dc 로 풀어 문자열로 찾을 것(파일 2,800여 개, 2MB 아래만 · 복잡한 정규식은 ugrep 한도 넘음)

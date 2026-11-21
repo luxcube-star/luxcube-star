@@ -386,7 +386,7 @@ Row 3: ⇧ z x c v b n m ⌫        (9키, shift+letter+backspace)
 - **아이패드 숫자패드 왼쪽 배치 엔터 (사용자 결정 2026-11-21)**: 분리 배치(`usesIPadSplit` · 한글)에서 그리드는 화면 폭의 69% 인데 엔터 폭(`baseReturnWidth`)은
   화면 전체를 그리드로 친 키 크기라 넓었다. 숫자패드가 **왼쪽**이면 `KeyboardView` 가 `KeyboardMetrics.iPadSplitReturnLeadingX`(그리드 ㅍ 키 왼쪽 끝, 행 좌표)를
   `FunctionRowView.returnLeadingX` 로 넘기고, 엔터 = 그 자리 ~ 내림 키 앞(`alignedReturnWidth`), 남는 폭은 스페이스바 — 스페이스바(+펑크 키) 끝이 ㅊ 키 끝.
-  오른쪽 배치는 🌐 · !#1 · ABC 만으로 ㅊ 끝을 넘어 그대로. 양손 · 심볼 행, 예전보다 넓어지는 값은 무시 (`FunctionRowWidthTests.test_iPadSplitLeft_*`)
+  오른쪽 배치는 🌐 · !#1 · ABC 만으로 ㅊ 끝을 넘어 그대로. 양손 · 심볼 행, 예전보다 넓어지는 값(내림 키를 끈 때 — 1133pt 에서 ㅍ ~ 행 끝이 예전 엔터보다 넓음)은 무시 (`FunctionRowWidthTests.test_iPadSplitLeft_*`)
 - 기능행 4개 바디(default/longSpace/symbol/bimanual) 모두 자식 폭 합 == `effectiveTotalWidth` 여야 ⏎ 가 안 잘림. 자식 추가 시 간격 수도 함께 증가 — 지구본은 `globeReservedWidth`(폭+간격)를 **스페이스바에서만** 차감. 불변식은 `FunctionRowWidthTests` 가드
 - 키보드 내림 키 (이슈 #51, v2.2.6): ⏎ **오른쪽** 맨 끝, 설정 `showDismissKeyboardKey`(기본값 = 아이패드 ON / 아이폰 OFF,
   `KeyboardSettings.defaultShowDismissKeyboardKey` 하나를 loadAll·resetAll·프로퍼티가 같이 씀). 폭 `dismissWidth` = 지구본의
