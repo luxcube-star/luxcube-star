@@ -195,6 +195,27 @@ enum KeyboardMetrics {
         isPad && (isLandscape || portraitSplitEnabled)
     }
 
+    /// 아이패드 분리 레이아웃(숫자패드 **왼쪽**)에서 기능행 엔터의 왼쪽 끝 x — 그리드 ㅍ 키(4번째 줄 4열)의 왼쪽 끝,
+    /// 곧 스페이스바(+펑크 키) 오른쪽 끝이 ㅊ 키 오른쪽 끝에 오는 자리 (사용자 결정 2026-11-21 1가).
+    /// 기능행과 그리드는 같은 안쪽 여백(`keySpacing`) 안에서 x = 0 부터 놓이므로 행 좌표로 그대로 쓴다.
+    /// 그리드 안 위치는 `KeyboardView.keyXPosition` 과 같은 식(가운데 정렬, 여백 하한 `keySpacing`).
+    /// 숫자패드가 오른쪽이면 🌐 · !#1 · ABC 만으로 ㅊ 끝을 넘어 스페이스바 자리가 없어 쓰지 않는다(같은 결정).
+    static func iPadSplitReturnLeadingX(numpadWidth: CGFloat, moakiWidth: CGFloat,
+                                        splitSpacing: CGFloat, moakiCenterKeyWidth: CGFloat) -> CGFloat {
+        let row = 3, column = 4
+        let columnCount = koreanLayout[row].count
+        var gridWidth: CGFloat = 0
+        for col in 0..<columnCount {
+            gridWidth += keyWidth(for: col, row: row, centerKeyWidth: moakiCenterKeyWidth, mode: .korean)
+        }
+        gridWidth += keySpacing * CGFloat(columnCount - 1)
+        var x = max(keySpacing, (moakiWidth - gridWidth) / 2)
+        for col in 0..<column {
+            x += keyWidth(for: col, row: row, centerKeyWidth: moakiCenterKeyWidth, mode: .korean) + keySpacing
+        }
+        return numpadWidth + splitSpacing + x
+    }
+
     /// 아이패드 분리 레이아웃 좌(또는 우) 숫자패드. 계산기식 3×4.
     static let numberPadBackspaceLabel = "⌫"
     static let numberPadKeys: [[String]] = [

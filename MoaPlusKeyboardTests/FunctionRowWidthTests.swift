@@ -117,4 +117,61 @@ final class FunctionRowWidthTests: XCTestCase {
         XCTAssertEqual(off.spaceWidth - on.spaceWidth,
                        on.globeWidth + KeyboardMetrics.keySpacing, accuracy: 0.01)
     }
+
+    // MARK: - 아이패드 숫자패드 왼쪽 배치 (사용자 결정 2026-11-21)
+
+    /// `KeyboardView` 와 같은 식으로 분리 배치 값을 만든다 (iPad mini 가로 1133pt).
+    private func splitMetrics(width: CGFloat = 1133) -> (numpad: CGFloat, moaki: CGFloat, center: CGFloat) {
+        let sp = KeyboardMetrics.keySpacing
+        let numpad = (width - sp * 3) * 0.31
+        let moaki = (width - sp * 3) * 0.69
+        return (numpad, moaki, KeyboardMetrics.centerKeyWidth(for: moaki, columnCount: 7, mode: .korean))
+    }
+
+    func test_iPadSplitLeft_returnStartsWherePaStarts_spaceEndsAtChieut() {
+        let width: CGFloat = 1133
+        let m = splitMetrics(width: width)
+        let sp = KeyboardMetrics.keySpacing
+        let x = KeyboardMetrics.iPadSplitReturnLeadingX(
+            numpadWidth: m.numpad, moakiWidth: m.moaki, splitSpacing: sp, moakiCenterKeyWidth: m.center)
+        // ㅊ(4번째 줄 3열) 오른쪽 끝 = 여백 + 넓힌 옆 칸 + 가운데 키 3개 + 간격 3 — 그 뒤 간격 하나가 ㅍ 왼쪽 끝.
+        let side = KeyboardMetrics.keyWidth(for: 0, row: 3, centerKeyWidth: m.center, mode: .korean)
+        let gridWidth = side * 2 + m.center * 5 + sp * 6
+        let margin = max(sp, (m.moaki - gridWidth) / 2)
+        let chieutRight = m.numpad + sp + margin + side + sp + (m.center + sp) * 2 + m.center
+        XCTAssertEqual(x, chieutRight + sp, accuracy: 0.01)
+
+        for (globe, dismiss) in Self.globeDismissCombos {
+            for slotA in [SlotAPreset.fullPackage, .vowel] {
+                var customization = LayoutCustomization()
+                customization.slotA = slotA
+                let view = FunctionRowView(
+                    totalWidth: width, mode: .korean,
+                    onToggleSymbolPressed: {}, onToggleLetterPressed: {}, onSpacePressed: {},
+                    onPunctuation: { _ in }, onReturnPressed: {},
+                    showGlobeKey: globe, showDismissKey: dismiss,
+                    returnLeadingX: x, layoutCustomization: customization)
+                let label = "split slotA=\(slotA) globe=\(globe) dismiss=\(dismiss)"
+                assertFits(view, label, kind: slotA == .fullPackage ? .longSpace : .default)
+                XCTAssertNotNil(view.alignedReturnWidth, label)
+                XCTAssertLessThan(view.returnWidth, view.baseReturnWidth, label)
+                // 엔터 왼쪽 끝 = 행 끝 − 내림 키 몫 − 엔터 폭 = ㅍ 왼쪽 끝.
+                let returnLeft = view.occupiedWidth - view.dismissReservedWidth - view.returnWidth
+                XCTAssertEqual(returnLeft, x, accuracy: 0.5, label)
+            }
+        }
+    }
+
+    func test_returnLeadingX_ignoredWhenItWouldWidenOrInSymbolMode() {
+        let base = row(mode: .korean, showGlobeKey: true, totalWidth: 1133)
+        // 예전 엔터보다 넓어지는 자리면 쓰지 않는다.
+        var wide = base
+        wide.returnLeadingX = 10
+        XCTAssertNil(wide.alignedReturnWidth)
+        XCTAssertEqual(wide.returnWidth, base.baseReturnWidth)
+        // 심볼 행은 다른 배치라 쓰지 않는다.
+        var symbol = row(mode: .symbolFromKorean, showGlobeKey: true, totalWidth: 1133)
+        symbol.returnLeadingX = 900
+        XCTAssertNil(symbol.alignedReturnWidth)
+    }
 }

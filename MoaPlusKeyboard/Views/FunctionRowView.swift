@@ -25,6 +25,9 @@ struct FunctionRowView: View {
     var showDismissKey: Bool = false
     var onDismissKeyboardPressed: (() -> Void)? = nil
     var useBimanualLayout: Bool = false
+    /// 엔터 왼쪽 끝을 맞출 행 안 x (아이패드 숫자패드 왼쪽 배치 — `KeyboardMetrics.iPadSplitReturnLeadingX`).
+    /// nil 이면 예전 폭. 엔터가 줄어든 만큼은 스페이스바가 가져간다(`spaceWidth` 가 나머지를 받음).
+    var returnLeadingX: CGFloat? = nil
     var layoutCustomization: LayoutCustomization = LayoutCustomization()
     var onSlotBVowelGestureStart: ((CGPoint) -> Void)? = nil
     var onSlotBVowelGestureMove: ((CGPoint) -> Void)? = nil
@@ -453,6 +456,20 @@ struct FunctionRowView: View {
     }
 
     var returnWidth: CGFloat {
+        alignedReturnWidth ?? baseReturnWidth
+    }
+
+    /// 아이패드 분리 배치에서 엔터를 그리드 ㅍ 키 왼쪽 끝 ~ 내림 키 앞으로 (사용자 결정 2026-11-21).
+    /// 그리드는 화면 폭의 69% 인데 `baseReturnWidth` 는 화면 전체를 그리드로 친 키 크기라 엔터가 넓었다.
+    /// 양손 · 심볼 행은 다른 배치라 쓰지 않고, 예전보다 넓어지거나 0 이하가 되면 예전 폭.
+    var alignedReturnWidth: CGFloat? {
+        guard let x = returnLeadingX, !useBimanualLayout, !mode.isSymbol else { return nil }
+        let width = effectiveTotalWidth - dismissReservedWidth - x
+        guard width > 0, width < baseReturnWidth else { return nil }
+        return width
+    }
+
+    var baseReturnWidth: CGFloat {
         let centerKeyWidth = KeyboardMetrics.centerKeyWidth(for: totalWidth)
         let usesWideBackspace = layoutCustomization.slotA == .fullPackage
             || (mode.isSymbol && layoutCustomization.slotA != .vowel)

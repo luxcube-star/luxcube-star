@@ -97,7 +97,8 @@ struct KeyboardView: View {
     }
 
     @ViewBuilder
-    private func functionRow(totalWidth: CGFloat, showsDismissKey: Bool, height: CGFloat) -> some View {
+    private func functionRow(totalWidth: CGFloat, showsDismissKey: Bool, height: CGFloat,
+                             returnLeadingX: CGFloat? = nil) -> some View {
         FunctionRowView(
             totalWidth: totalWidth,
             mode: viewModel.keyboardMode,
@@ -113,6 +114,7 @@ struct KeyboardView: View {
             showGlobeKey: viewModel.canSwitchInputMode,
             showDismissKey: showsDismissKey,
             onDismissKeyboardPressed: { viewModel.dismissKeyboard() },
+            returnLeadingX: returnLeadingX,
             layoutCustomization: settings.layoutCustomization,
             onSlotBVowelGestureStart: { viewModel.slotBVowelGestureStarted(at: $0) },
             onSlotBVowelGestureMove: { viewModel.slotBVowelGestureMoved(to: $0) },
@@ -310,9 +312,15 @@ struct KeyboardView: View {
                                         .frame(width: numpadWidth)
                                 }
                             }
+                            // 숫자패드 왼쪽이면 스페이스바 끝을 ㅊ 키 끝에, 엔터를 ㅍ 키부터 (사용자 결정 2026-11-21).
                             functionRow(totalWidth: geometry.size.width,
                                         showsDismissKey: dismissKeyInRow && settings.showDismissKeyboardKey,
-                                        height: keyHeight)
+                                        height: keyHeight,
+                                        returnLeadingX: settings.layoutCustomization.numberPadSide == .left
+                                            ? KeyboardMetrics.iPadSplitReturnLeadingX(
+                                                numpadWidth: numpadWidth, moakiWidth: moakiWidth,
+                                                splitSpacing: splitSpacing, moakiCenterKeyWidth: moakiCenterKeyWidth)
+                                            : nil)
                         } else {
                             keyGrid(centerKeyWidth: centerKeyWidth, keyHeight: keyHeight, totalWidth: geometry.size.width)
                             functionRow(totalWidth: geometry.size.width,
