@@ -183,3 +183,13 @@ final class FunctionRowWidthTests: XCTestCase {
         XCTAssertNil(symbol.alignedReturnWidth)
     }
 }
+
+/// 기능행 키 눌림 표시 = 자음 키와 같은 반대쪽 키 색 (사용자 결정 2026-11-22 1나 · 2가).
+/// 투명도만 낮추던 예전 방식으로 되돌리면 눌려도 티가 안 난다(아이패드 스페이스바 제보).
+final class FunctionKeyPressFillTests: XCTestCase {
+    func test_pressed_usesKeyColor_released_usesFunctionKeyColor() {
+        let s = KeyboardSettings.shared
+        XCTAssertEqual(FunctionKeyPressFill.fillColor(pressed: true, settings: s), s.resolvedKeyBackground)
+        XCTAssertEqual(FunctionKeyPressFill.fillColor(pressed: false, settings: s), s.resolvedFunctionKeyBackground)
+    }
+}

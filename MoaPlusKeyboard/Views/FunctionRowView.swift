@@ -540,6 +540,35 @@ struct FunctionRowView: View {
     }
 }
 
+// MARK: - Function key press fill
+
+/// 기능행 키(스페이스 · 엔터 · 한/영 · 123 · 긋기 펑크 · 모음 키) 바탕. 눌림 표시는 자음 키(`KeyView`)와 같다
+/// — 반대쪽 키 색(기능키 색 → 일반 키 색)으로 바꾸고, 뗀 뒤 `KeyView.pressLingerDuration` 만큼 남긴다.
+/// 예전엔 투명도 70%만 낮춰 뒤 바탕(`systemGray6`)과 거의 같아 티가 안 났다(사용자 제보 2026-11-22, 아이패드 스페이스바).
+struct FunctionKeyPressFill: View {
+    let isPressed: Bool
+    @State private var pressLinger = false
+
+    /// 눌림 여부 → 바탕 색. `FunctionKeyPressFillTests` 가 고정한다.
+    static func fillColor(pressed: Bool, settings: KeyboardSettings = .shared) -> Color {
+        pressed ? settings.resolvedKeyBackground : settings.resolvedFunctionKeyBackground
+    }
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: KeyboardMetrics.keyCornerRadius)
+            .fill(Self.fillColor(pressed: isPressed || pressLinger))
+            .onChange(of: isPressed) { _, pressed in
+                if pressed {
+                    pressLinger = true
+                } else {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + KeyView.pressLingerDuration) {
+                        pressLinger = false
+                    }
+                }
+            }
+    }
+}
+
 // MARK: - Punctuation swipe key
 
 /// 5개 슬롯(tap/←/→/↑/↓)을 외부에서 주입받는 긋기 펑크 키.
@@ -557,7 +586,6 @@ struct PunctuationSwipeKey: View {
 
     private static let dragThreshold: CGFloat = 12
 
-    private var bg: Color { KeyboardSettings.shared.resolvedFunctionKeyBackground }
     private var fg: Color { KeyboardSettings.shared.resolvedKeyText }
 
     /// 글자 수에 따라 미리보기 폰트 축소. 1자=16/9, 2자=12/8, 3자+=10/7.
@@ -606,8 +634,7 @@ struct PunctuationSwipeKey: View {
         }
         .frame(width: width, height: height)
         .background(
-            RoundedRectangle(cornerRadius: KeyboardMetrics.keyCornerRadius)
-                .fill(isPressed ? bg.opacity(0.7) : bg)
+            FunctionKeyPressFill(isPressed: isPressed)
         )
         .gesture(
             DragGesture(minimumDistance: 0)
@@ -665,7 +692,6 @@ struct SlotBVowelKey: View {
 
     @State private var isPressed = false
 
-    private var bg: Color { KeyboardSettings.shared.resolvedFunctionKeyBackground }
     private var fg: Color { KeyboardSettings.shared.resolvedKeyText }
 
     var body: some View {
@@ -677,8 +703,7 @@ struct SlotBVowelKey: View {
         }
         .frame(width: width, height: height)
         .background(
-            RoundedRectangle(cornerRadius: KeyboardMetrics.keyCornerRadius)
-                .fill(isPressed ? bg.opacity(0.7) : bg)
+            FunctionKeyPressFill(isPressed: isPressed)
         )
         .gesture(
             // Named coordinate space ("keyboardPreview") so points are in the
@@ -793,9 +818,6 @@ struct SpaceKeyView: View {
     /// holding the finger in the outer 15% of the bar repeats in that direction.
     private static let edgeZoneFraction: CGFloat = 0.15
 
-    private var themeBackgroundColor: Color {
-        KeyboardSettings.shared.resolvedFunctionKeyBackground
-    }
     private var themeTextColor: Color {
         KeyboardSettings.shared.resolvedKeyText
     }
@@ -830,8 +852,7 @@ struct SpaceKeyView: View {
             .frame(width: width, height: height)
             .background(
                 ZStack {
-                    RoundedRectangle(cornerRadius: KeyboardMetrics.keyCornerRadius)
-                        .fill(isPressed ? themeBackgroundColor.opacity(0.7) : themeBackgroundColor)
+                    FunctionKeyPressFill(isPressed: isPressed)
                     // While dragging for cursor movement, reveal BOTH edge zones
                     // so the user can see where to aim before reaching one — the
                     // zones are invisible at rest. Each zone shows a chevron in
@@ -960,9 +981,6 @@ struct FunctionKeyView: View {
         }
     }
 
-    private var themeBackgroundColor: Color {
-        KeyboardSettings.shared.resolvedFunctionKeyBackground
-    }
 
     private var themeTextColor: Color {
         KeyboardSettings.shared.resolvedKeyText
@@ -973,8 +991,7 @@ struct FunctionKeyView: View {
             .foregroundColor(themeTextColor)
             .frame(width: width, height: height)
             .background(
-                RoundedRectangle(cornerRadius: KeyboardMetrics.keyCornerRadius)
-                    .fill(isPressed ? themeBackgroundColor.opacity(0.7) : themeBackgroundColor)
+                FunctionKeyPressFill(isPressed: isPressed)
             )
             .gesture(
                 DragGesture(minimumDistance: 0)
