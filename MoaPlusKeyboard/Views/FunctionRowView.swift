@@ -21,8 +21,11 @@ struct FunctionRowView: View {
     /// switch target exists. Defaults to `false` so previews and any caller
     /// that predates the key keep the original 5-key geometry.
     var showGlobeKey: Bool = false
-    /// 행 맨 오른쪽(⏎ 옆)의 키보드 내림 키 (이슈 #51). 지구본과 같이 폭은 스페이스바에서만 뺀다.
+    /// 행 맨 오른쪽(⏎ 옆)의 키보드 내림 키 (이슈 #51). 폭은 자음 키 한 칸 — `dismissWidth` 참조.
     var showDismissKey: Bool = false
+    /// 위 그리드의 자음 키 한 칸 폭. 아이패드 분리 배치는 그리드가 화면의 69% 라
+    /// `KeyboardMetrics.centerKeyWidth(for: totalWidth)` 보다 좁다 — 그때 `KeyboardView` 가 넘긴다. nil 이면 그 식.
+    var gridKeyWidth: CGFloat? = nil
     /// ⏎ 를 키 한 칸 폭으로 (설정 `compactReturnKeyEnabled`). 남는 폭은 스페이스바가 가져간다.
     var compactReturnKey: Bool = false
     var onDismissKeyboardPressed: (() -> Void)? = nil
@@ -182,13 +185,25 @@ struct FunctionRowView: View {
         }
     }
 
-    /// 지구본의 0.8배 — 같은 폭이면 홈 버튼 아이폰(375pt, 지구본 표시)에서 스페이스바가 한/영 키보다
-    /// 좁아진다(45pt < 50pt). `FunctionRowWidthTests.test_dismissKeyShrinksOnlyTheSpaceBar`
+    /// 자음 키 한 칸 폭 (사용자 결정 2026-11-24 1가 · 2가 · 3가 — 예전엔 지구본의 0.8배라 다른 키보다 작았다).
+    /// 스페이스바는 예전 몫(`legacyDismissWidth`)만 내고, 늘어난 몫(`dismissGrowth`)은 엔터가 낸다 —
+    /// 홈 버튼 아이폰(375pt, 지구본 표시)에서 스페이스바가 한/영 키보다 좁아지지 않게.
+    /// `FunctionRowWidthTests.test_dismissKeyGrowthComesFromReturn`
     var dismissWidth: CGFloat {
+        gridKeyWidth ?? KeyboardMetrics.centerKeyWidth(for: totalWidth)
+    }
+
+    /// 예전 내림 키 폭(지구본의 0.8배) — 스페이스바가 내림 키에 내는 몫.
+    var legacyDismissWidth: CGFloat {
         globeWidth * 0.8
     }
 
-    /// 내림 키가 스페이스바에서 가져가는 폭(앞 간격 포함). 숨기면 0.
+    /// 내림 키가 예전보다 늘어난 폭 — 엔터가 낸다. 숨기면 0.
+    var dismissGrowth: CGFloat {
+        showDismissKey ? max(0, dismissWidth - legacyDismissWidth) : 0
+    }
+
+    /// 내림 키가 행에서 차지하는 폭(앞 간격 포함). 숨기면 0.
     var dismissReservedWidth: CGFloat {
         showDismissKey ? dismissWidth + spacing : 0
     }
@@ -462,7 +477,12 @@ struct FunctionRowView: View {
             ? min(baseReturnWidth, KeyboardMetrics.centerKeyWidth(for: totalWidth))
             : baseReturnWidth
         // 아이패드 숫자패드 왼쪽 배치 맞춤은 줄이기만 한다 — 「엔터 키 좁게」가 더 좁으면 그것.
-        return min(alignedReturnWidth ?? standard, standard)
+        // 맞춘 엔터는 내림 키 앞에서 끝나므로 내림 키가 커진 만큼 이미 줄어 있다.
+        if let aligned = alignedReturnWidth { return min(aligned, standard) }
+        // 내림 키가 커진 몫은 엔터가 낸다. 다만 키 한 칸보다는 안 줄이고, 모자란 몫은 스페이스바가 낸다
+        // (「엔터 키 좁게」를 켜면 엔터가 이미 한 칸이라 그 몫은 모두 스페이스바).
+        let oneKey = min(standard, KeyboardMetrics.centerKeyWidth(for: totalWidth))
+        return max(standard - dismissGrowth, oneKey)
     }
 
     /// 아이패드 분리 배치에서 엔터를 그리드 ㅍ 키 왼쪽 끝 ~ 내림 키 앞으로 (사용자 결정 2026-11-21).

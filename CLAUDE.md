@@ -391,8 +391,11 @@ Row 3: ⇧ z x c v b n m ⌫        (9키, shift+letter+backspace)
   오른쪽 배치는 🌐 · !#1 · ABC 만으로 ㅊ 끝을 넘어 그대로. 양손 · 심볼 행, 예전보다 넓어지는 값(내림 키를 끈 때 — 1133pt 에서 ㅍ ~ 행 끝이 예전 엔터보다 넓음)은 무시 (`FunctionRowWidthTests.test_iPadSplitLeft_*`)
 - 기능행 4개 바디(default/longSpace/symbol/bimanual) 모두 자식 폭 합 == `effectiveTotalWidth` 여야 ⏎ 가 안 잘림. 자식 추가 시 간격 수도 함께 증가 — 지구본은 `globeReservedWidth`(폭+간격)를 **스페이스바에서만** 차감. 불변식은 `FunctionRowWidthTests` 가드
 - 키보드 내림 키 (이슈 #51, v2.2.6): ⏎ **오른쪽** 맨 끝, 설정 `showDismissKeyboardKey`(기본값 = 아이패드 ON / 아이폰 OFF,
-  `KeyboardSettings.defaultShowDismissKeyboardKey` 하나를 loadAll·resetAll·프로퍼티가 같이 씀). 폭 `dismissWidth` = 지구본의
-  **0.8배** — 같은 폭이면 375pt + 지구본(홈 버튼 아이폰)에서 스페이스바가 한/영보다 좁아진다. 지구본처럼 **스페이스바에서만** 차감.
+  `KeyboardSettings.defaultShowDismissKeyboardKey` 하나를 loadAll·resetAll·프로퍼티가 같이 씀). 폭 `dismissWidth` = **자음 키 한 칸**
+  (사용자 결정 2026-11-24 — 예전엔 지구본의 0.8배라 다른 키보다 작았다. 아이패드 분리 배치는 그리드 키 폭 `gridKeyWidth` 를 `KeyboardView` 가 넘김).
+  스페이스바는 예전 몫(`legacyDismissWidth` = 지구본 0.8배 + 간격)만 내고 늘어난 몫(`dismissGrowth`)은 **엔터가** 낸다 — 엔터는 키 한 칸 밑으로는
+  안 줄고(엔터 키 좁게 ON 이면 그 몫도 스페이스바), 아이패드 숫자패드 왼쪽 맞춤 엔터는 내림 키 앞에서 끝나 저절로 줄어든다. 스페이스바 몫을 늘리면 375pt + 지구본에서 한/영보다 좁아진다
+  (`FunctionRowWidthTests.test_dismissKeyGrowthComesFromReturn`).
   한손 모드에서는 기능행 대신 빈쪽 띠의 세 번째 버튼(`keyboardContent(dismissKeyInRow: false)`). 탭 → `viewModel.dismissKeyboard()`
   (조합 확정) → 델리게이트 `hideKeyboard()` → `UIInputViewController.dismissKeyboard()` — 델리게이트 이름을 `dismissKeyboard` 로
   두지 말 것(상속 메서드와 혼동)

@@ -92,18 +92,41 @@ final class FunctionRowWidthTests: XCTestCase {
         }
     }
 
-    /// 내림 키도 지구본처럼 스페이스바만 줄인다. 가장 좁은 아이폰(375pt, 지구본 표시)에서도
-    /// 스페이스바가 한/영 키보다 넓어야 쓸 만하다 — 한손 모드는 내림 키를 띠로 빼서 이 검사 밖.
-    func test_dismissKeyShrinksOnlyTheSpaceBar() {
-        let off = row(mode: .korean, showGlobeKey: true, totalWidth: 375)
-        let on = row(mode: .korean, showGlobeKey: true, showDismissKey: true, totalWidth: 375)
-        XCTAssertEqual(on.punctuationWidth, off.punctuationWidth, accuracy: 0.01)
-        XCTAssertEqual(on.symbolToggleWidth, off.symbolToggleWidth, accuracy: 0.01)
-        XCTAssertEqual(on.letterToggleWidth, off.letterToggleWidth, accuracy: 0.01)
-        XCTAssertEqual(on.returnWidth, off.returnWidth, accuracy: 0.01)
-        XCTAssertEqual(off.spaceWidth - on.spaceWidth,
-                       on.dismissWidth + KeyboardMetrics.keySpacing, accuracy: 0.01)
-        XCTAssertGreaterThan(on.spaceWidth, on.letterToggleWidth, "375pt + 지구본 + 내림 키에서 스페이스바가 너무 좁다")
+    /// 내림 키 = 자음 키 한 칸 (사용자 결정 2026-11-24). 스페이스바는 예전 몫(지구본의 0.8배 + 간격)만 내고
+    /// 늘어난 몫은 엔터가 낸다 — 가장 좁은 아이폰(375pt, 지구본 표시)에서도 스페이스바가 한/영 키보다 넓어야 쓸 만하다.
+    /// 한손 모드는 내림 키를 띠로 빼서 이 검사 밖.
+    func test_dismissKeyGrowthComesFromReturn() {
+        for width: CGFloat in [375, 393, 744, 1133] {
+            let off = row(mode: .korean, showGlobeKey: true, totalWidth: width)
+            let on = row(mode: .korean, showGlobeKey: true, showDismissKey: true, totalWidth: width)
+            let tag = "width=\(width)"
+            XCTAssertEqual(on.dismissWidth, on.letterToggleWidth, accuracy: 0.01, "내림 키 = 키 한 칸 \(tag)")
+            XCTAssertGreaterThan(on.dismissGrowth, 0, tag)
+            XCTAssertEqual(on.punctuationWidth, off.punctuationWidth, accuracy: 0.01, tag)
+            XCTAssertEqual(on.symbolToggleWidth, off.symbolToggleWidth, accuracy: 0.01, tag)
+            XCTAssertEqual(on.letterToggleWidth, off.letterToggleWidth, accuracy: 0.01, tag)
+            XCTAssertEqual(off.returnWidth - on.returnWidth, on.dismissGrowth, accuracy: 0.01, "늘어난 몫은 엔터가 \(tag)")
+            XCTAssertEqual(off.spaceWidth - on.spaceWidth,
+                           on.legacyDismissWidth + KeyboardMetrics.keySpacing, accuracy: 0.01, "스페이스바는 예전 몫만 \(tag)")
+            XCTAssertGreaterThan(on.spaceWidth, on.letterToggleWidth, "스페이스바가 너무 좁다 \(tag)")
+        }
+    }
+
+    /// 「엔터 키 좁게」면 엔터가 이미 키 한 칸이라 더 줄이지 않고, 늘어난 몫까지 스페이스바가 낸다.
+    func test_dismissKeyGrowth_compactReturnKeepsOneKey() {
+        let off = row(mode: .korean, showGlobeKey: true, compactReturn: true, totalWidth: 375)
+        let on = row(mode: .korean, showGlobeKey: true, showDismissKey: true, compactReturn: true, totalWidth: 375)
+        XCTAssertEqual(on.returnWidth, on.letterToggleWidth, accuracy: 0.01)
+        XCTAssertEqual(off.spaceWidth - on.spaceWidth, on.dismissWidth + KeyboardMetrics.keySpacing, accuracy: 0.01)
+        assertFits(on, "compact + dismiss 375", kind: .default)
+    }
+
+    /// 아이패드 분리 배치: 그리드 키 폭을 넘기면 내림 키가 그 폭이다.
+    func test_dismissKey_usesGridKeyWidthWhenGiven() {
+        var view = row(mode: .korean, showGlobeKey: true, showDismissKey: true, totalWidth: 1133)
+        view.gridKeyWidth = 108.7
+        XCTAssertEqual(view.dismissWidth, 108.7, accuracy: 0.01)
+        assertFits(view, "split grid key width", kind: .default)
     }
 
     /// 지구본을 켜면 스페이스 바만 줄어들어야 한다. 펑크 키까지 같이 줄면

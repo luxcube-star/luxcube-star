@@ -98,7 +98,7 @@ struct KeyboardView: View {
 
     @ViewBuilder
     private func functionRow(totalWidth: CGFloat, showsDismissKey: Bool, height: CGFloat,
-                             returnLeadingX: CGFloat? = nil) -> some View {
+                             returnLeadingX: CGFloat? = nil, gridKeyWidth: CGFloat? = nil) -> some View {
         FunctionRowView(
             totalWidth: totalWidth,
             mode: viewModel.keyboardMode,
@@ -113,6 +113,7 @@ struct KeyboardView: View {
             onLanguageSwitchPressed: { viewModel.switchKeyboard() },
             showGlobeKey: viewModel.canSwitchInputMode,
             showDismissKey: showsDismissKey,
+            gridKeyWidth: gridKeyWidth,
             compactReturnKey: settings.compactReturnKeyEnabled,
             onDismissKeyboardPressed: { viewModel.dismissKeyboard() },
             returnLeadingX: returnLeadingX,
@@ -337,7 +338,8 @@ struct KeyboardView: View {
                                             ? KeyboardMetrics.iPadSplitReturnLeadingX(
                                                 numpadWidth: numpadWidth, moakiWidth: moakiWidth,
                                                 splitSpacing: splitSpacing, moakiCenterKeyWidth: moakiCenterKeyWidth)
-                                            : nil)
+                                            : nil,
+                                        gridKeyWidth: moakiCenterKeyWidth)
                         } else {
                             keyGrid(centerKeyWidth: centerKeyWidth, keyHeight: keyHeight, totalWidth: geometry.size.width)
                             functionRow(totalWidth: geometry.size.width,
