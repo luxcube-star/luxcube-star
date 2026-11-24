@@ -45,11 +45,15 @@ final class KeyboardSettings: ObservableObject {
         static let earlyTouchDelayedDiagnostic = "earlyTouchDelayedDiagnostic"
         static let autoCapitalizeDiagnostic = "autoCapitalizeDiagnostic"
         static let predictionDiagnostic = "predictionDiagnostic"
+        static let bracketReturnDiagnostic = "bracketReturnDiagnostic"
+        static let textReplacementDiagnostic = "textReplacementDiagnostic"
+        static let wordSuggestionEnabled = "wordSuggestionEnabled"
         static let fullAccessDiagnostic = "fullAccessDiagnostic"
         static let keyboardMeasuredBottomInset = "keyboardMeasuredBottomInset"
         static let keyboardMeasuredBottomGap = "keyboardMeasuredBottomGap"
         static let showGlobeKey = "showGlobeKey"
         static let showDismissKeyboardKey = "showDismissKeyboardKey"
+        static let compactReturnKeyEnabled = "compactReturnKeyEnabled"
         static let keyboardPlacement = "keyboardPlacement"
         static let oneHandedWidthRatio = "oneHandedWidthRatio"
         static let consonantDiagonalDerivation = "consonantDiagonalDerivation"
@@ -57,6 +61,7 @@ final class KeyboardSettings: ObservableObject {
         static let clickSoundEnabled = "clickSoundEnabled"
         static let showDetailedHints = "showDetailedHints"
         static let autoBracketEnabled = "autoBracketEnabled"
+        static let returnToLettersAfterBracket = "returnToLettersAfterBracket"
         static let englishAutoCapitalize = "englishAutoCapitalize"
         static let englishLongPressUppercase = "englishLongPressUppercase"
         static let wordDeleteEnabled = "wordDeleteEnabled"
@@ -73,6 +78,7 @@ final class KeyboardSettings: ObservableObject {
         static let predictionLearningEnabled = "predictionLearningEnabled"
         static let predictionResetToken = "predictionResetToken"
         static let abbreviationEnabled = "abbreviationEnabled"
+        static let systemTextReplacementEnabled = "systemTextReplacementEnabled"
         static let abbreviationUndoOnBackspace = "abbreviationUndoOnBackspace"
         static let abbreviationKeepConfirmSpace = "abbreviationKeepConfirmSpace"
         static let abbreviationTriggerPolicy = "abbreviationTriggerPolicy"
@@ -206,6 +212,12 @@ final class KeyboardSettings: ObservableObject {
         didSet { guard !isLoading else { return }; writePrimitive(abbreviationEnabled, forKey: Keys.abbreviationEnabled) }
     }
 
+    /// iOS 텍스트 대치(설정 › 일반 › 키보드 › 텍스트 대치)도 단축어로 펼친다 (앱스토어 리뷰 2026-10). 기본 OFF.
+    /// 목록은 키보드만 받을 수 있다(`requestSupplementaryLexicon`) — 앱 화면에는 없다.
+    @Published var systemTextReplacementEnabled: Bool = false {
+        didSet { guard !isLoading else { return }; writePrimitive(systemTextReplacementEnabled, forKey: Keys.systemTextReplacementEnabled) }
+    }
+
     /// 확장 직후 백스페이스 한 번으로 원래 트리거를 되살릴지 (iOS 텍스트 대치와 동일한 undo).
     /// 사용자 제보상 "띄어쓰기를 지우면 단축어가 사라진다" 로 인지되는 동작이라 끌 수 있게 뒀다.
     @Published var abbreviationUndoOnBackspaceEnabled: Bool = true {
@@ -253,6 +265,11 @@ final class KeyboardSettings: ObservableObject {
     /// Auto-close brackets: (), {}, []
     @Published var autoBracketEnabled: Bool = true {
         didSet { guard !isLoading else { return }; writePrimitive(autoBracketEnabled, forKey: Keys.autoBracketEnabled) }
+    }
+
+    /// 기호 자판에서 괄호를 탭하면 원래 한글/영문 자판으로 (앱스토어 리뷰 2026-11). 기본 OFF.
+    @Published var returnToLettersAfterBracket: Bool = false {
+        didSet { guard !isLoading else { return }; writePrimitive(returnToLettersAfterBracket, forKey: Keys.returnToLettersAfterBracket) }
     }
 
     /// Show all popup candidates on key (detailed hint mode)
@@ -311,6 +328,11 @@ final class KeyboardSettings: ObservableObject {
     /// 아이폰은 꺼짐(기능행이 좁다). 전체 접근이 꺼진 사용자는 App Group 을 못 읽어 이 기본값을 쓴다.
     @Published var showDismissKeyboardKey: Bool = KeyboardSettings.defaultShowDismissKeyboardKey {
         didSet { guard !isLoading else { return }; writePrimitive(showDismissKeyboardKey, forKey: Keys.showDismissKeyboardKey) }
+    }
+
+    /// ⏎ 를 키 한 칸 폭으로 (앱스토어 리뷰 "엔터키가 너무 커요"). 남는 폭은 스페이스바가 가져간다. 기본 OFF.
+    @Published var compactReturnKeyEnabled: Bool = false {
+        didSet { guard !isLoading else { return }; writePrimitive(compactReturnKeyEnabled, forKey: Keys.compactReturnKeyEnabled) }
     }
 
     static var defaultShowDismissKeyboardKey: Bool {
@@ -409,7 +431,8 @@ final class KeyboardSettings: ObservableObject {
 
     /// 학습한 단어 추천 바 표시 (기본 ON). 끄면 바가 사라지고 키보드 높이도 원래대로 돌아간다.
     @Published var predictionEnabled: Bool = true {
-        didSet { guard !isLoading else { return }; writePrimitive(predictionEnabled, forKey: Keys.predictionEnabled) }
+        didSet { guard !isLoading else { return }; writePrimitive(predictionEnabled, forKey: Keys.predictionEnabled)
+            if predictionEnabled, wordSuggestionEnabled { wordSuggestionEnabled = false } }
     }
 
     /// 입력을 끝낸 단어를 기기 안에 학습 (기본 ON). 끄면 이미 학습한 단어로 추천만 한다.
@@ -421,6 +444,13 @@ final class KeyboardSettings: ObservableObject {
     /// 전체 접근이 꺼져 있으면 메인 앱이 키보드 쪽 파일을 직접 지울 수 없어서 이 신호를 쓴다.
     @Published var predictionResetToken: String = "" {
         didSet { guard !isLoading else { return }; writePrimitive(predictionResetToken, forKey: Keys.predictionResetToken) }
+    }
+
+    /// 원모아 사전 단어 추천 바 (기본 OFF — 켜면 키보드가 후보 줄만큼 높아져 기존 사용자 화면이 바뀐다).
+    @Published var wordSuggestionEnabled: Bool = false {
+        didSet { guard !isLoading else { return }; writePrimitive(wordSuggestionEnabled, forKey: Keys.wordSuggestionEnabled)
+            // 새모아 학습 추천과 같은 자리라 한 번에 하나만 켠다 (사용자 결정 2026-11-24 1가).
+            if wordSuggestionEnabled, predictionEnabled { predictionEnabled = false } }
     }
 
     /// Capitalize the first letter of a sentence in English mode (default OFF).
@@ -615,6 +645,7 @@ final class KeyboardSettings: ObservableObject {
         migrateLongPressPrimaryIfNeeded()
         assign(\.shortcutExpansionStore, load(ShortcutExpansionStore.self, forKey: Keys.shortcutExpansions) ?? ShortcutExpansionStore())
         assign(\.abbreviationEnabled, defaults.object(forKey: Keys.abbreviationEnabled) as? Bool ?? true)
+        assign(\.systemTextReplacementEnabled, defaults.bool(forKey: Keys.systemTextReplacementEnabled))
         assign(\.abbreviationUndoOnBackspaceEnabled, defaults.object(forKey: Keys.abbreviationUndoOnBackspace) as? Bool ?? true)
         assign(\.abbreviationKeepConfirmSpaceEnabled, defaults.object(forKey: Keys.abbreviationKeepConfirmSpace) as? Bool ?? true)
         assign(\.abbreviationTriggerPolicy,
@@ -632,6 +663,7 @@ final class KeyboardSettings: ObservableObject {
         assign(\.showGlobeKey, defaults.object(forKey: Keys.showGlobeKey) as? Bool ?? false)
         assign(\.showDismissKeyboardKey, defaults.object(forKey: Keys.showDismissKeyboardKey) as? Bool
                ?? Self.defaultShowDismissKeyboardKey)
+        assign(\.compactReturnKeyEnabled, defaults.bool(forKey: Keys.compactReturnKeyEnabled))
         assign(\.keyboardPlacement,
                (defaults.object(forKey: Keys.keyboardPlacement) as? String)
                    .flatMap(KeyboardPlacement.init(rawValue:)) ?? .full)
@@ -641,6 +673,7 @@ final class KeyboardSettings: ObservableObject {
         assign(\.clickSoundEnabled, defaults.object(forKey: Keys.clickSoundEnabled) as? Bool ?? false)
         assign(\.showDetailedHints, defaults.object(forKey: Keys.showDetailedHints) as? Bool ?? false)
         assign(\.autoBracketEnabled, defaults.object(forKey: Keys.autoBracketEnabled) as? Bool ?? true)
+        assign(\.returnToLettersAfterBracket, defaults.bool(forKey: Keys.returnToLettersAfterBracket))
         assign(\.wordDeleteEnabled, defaults.object(forKey: Keys.wordDeleteEnabled) as? Bool ?? true)
         assign(\.backspaceDeletesWholeSyllable, defaults.object(forKey: Keys.backspaceDeletesWholeSyllable) as? Bool ?? false)
         assign(\.gestureDebugLogEnabled, defaults.object(forKey: Keys.gestureDebugLogEnabled) as? Bool ?? true)
@@ -654,6 +687,7 @@ final class KeyboardSettings: ObservableObject {
         assign(\.predictionEnabled, defaults.object(forKey: Keys.predictionEnabled) as? Bool ?? true)
         assign(\.predictionLearningEnabled, defaults.object(forKey: Keys.predictionLearningEnabled) as? Bool ?? true)
         assign(\.predictionResetToken, defaults.string(forKey: Keys.predictionResetToken) ?? "")
+        assign(\.wordSuggestionEnabled, defaults.object(forKey: Keys.wordSuggestionEnabled) as? Bool ?? false)
         assign(\.englishAutoCapitalizeEnabled, defaults.object(forKey: Keys.englishAutoCapitalize) as? Bool ?? false)
         assign(\.englishLongPressUppercaseEnabled, defaults.object(forKey: Keys.englishLongPressUppercase) as? Bool ?? true)
         assign(\.layoutCustomization, load(LayoutCustomization.self, forKey: Keys.layoutCustomization) ?? LayoutCustomization())
@@ -757,6 +791,26 @@ final class KeyboardSettings: ObservableObject {
         defaults.string(forKey: Keys.predictionDiagnostic)
     }
 
+    /// 괄호 입력 후 글자 자판 · iOS 텍스트 대치의 실기기 판독용 (2026-11 실기기에서 둘 다 "안 됨" 제보 —
+    /// 유닛 테스트는 통과). 키보드가 읽은 설정과 실제 결과를 시각과 함께 남긴다. 내용(단축키·문구)은 남기지 않는다.
+    func recordBracketReturnDiagnostic(_ text: String) {
+        defaults.set("\(Self.diagnosticStamp()) \(text)", forKey: Keys.bracketReturnDiagnostic)
+    }
+
+    var bracketReturnDiagnostic: String? { defaults.string(forKey: Keys.bracketReturnDiagnostic) }
+
+    func recordTextReplacementDiagnostic(_ text: String) {
+        defaults.set("\(Self.diagnosticStamp()) \(text)", forKey: Keys.textReplacementDiagnostic)
+    }
+
+    var textReplacementDiagnostic: String? { defaults.string(forKey: Keys.textReplacementDiagnostic) }
+
+    private static func diagnosticStamp() -> String {
+        let f = DateFormatter()
+        f.dateFormat = "MM/dd HH:mm:ss"
+        return f.string(from: Date())
+    }
+
     /// 익스텐션이 마지막으로 실측한 하단 안전영역(pt). 아직 키보드를 한 번도
     /// 띄우지 않았으면 `nil`.
     ///
@@ -807,6 +861,7 @@ final class KeyboardSettings: ObservableObject {
         // 사용자의 출력을 다음 `loadAll()` 이 옛 규칙으로 덮어쓴다.
         shortcutExpansionStore = ShortcutExpansionStore()
         abbreviationEnabled = true
+        systemTextReplacementEnabled = false
         abbreviationUndoOnBackspaceEnabled = true
         abbreviationKeepConfirmSpaceEnabled = true
         abbreviationTriggerPolicy = .safe
@@ -815,6 +870,7 @@ final class KeyboardSettings: ObservableObject {
         showSecondaryHints = true
         hintSize = 1
         autoBracketEnabled = true
+        returnToLettersAfterBracket = false
         showDetailedHints = false
         clickSoundEnabled = false
         sideKeyWidthRatio = 0.7
@@ -823,6 +879,7 @@ final class KeyboardSettings: ObservableObject {
         keyboardExtraBottomInset = KeyboardMetrics.defaultExtraBottomInset
         showGlobeKey = false
         showDismissKeyboardKey = Self.defaultShowDismissKeyboardKey
+        compactReturnKeyEnabled = false
         keyboardPlacement = .full
         oneHandedWidthRatio = KeyboardPlacement.defaultWidthRatio
         consonantDiagonalDerivationEnabled = false
@@ -839,6 +896,7 @@ final class KeyboardSettings: ObservableObject {
         gestureHabitEnabled = true
         predictionEnabled = true
         predictionLearningEnabled = true
+        wordSuggestionEnabled = false
         englishAutoCapitalizeEnabled = false
         englishLongPressUppercaseEnabled = true
         layoutCustomization = LayoutCustomization()

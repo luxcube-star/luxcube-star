@@ -23,6 +23,8 @@ struct FunctionRowView: View {
     var showGlobeKey: Bool = false
     /// 행 맨 오른쪽(⏎ 옆)의 키보드 내림 키 (이슈 #51). 지구본과 같이 폭은 스페이스바에서만 뺀다.
     var showDismissKey: Bool = false
+    /// ⏎ 를 키 한 칸 폭으로 (설정 `compactReturnKeyEnabled`). 남는 폭은 스페이스바가 가져간다.
+    var compactReturnKey: Bool = false
     var onDismissKeyboardPressed: (() -> Void)? = nil
     var useBimanualLayout: Bool = false
     /// 엔터 왼쪽 끝을 맞출 행 안 x (아이패드 숫자패드 왼쪽 배치 — `KeyboardMetrics.iPadSplitReturnLeadingX`).
@@ -456,7 +458,11 @@ struct FunctionRowView: View {
     }
 
     var returnWidth: CGFloat {
-        alignedReturnWidth ?? baseReturnWidth
+        let standard = compactReturnKey
+            ? min(baseReturnWidth, KeyboardMetrics.centerKeyWidth(for: totalWidth))
+            : baseReturnWidth
+        // 아이패드 숫자패드 왼쪽 배치 맞춤은 줄이기만 한다 — 「엔터 키 좁게」가 더 좁으면 그것.
+        return min(alignedReturnWidth ?? standard, standard)
     }
 
     /// 아이패드 분리 배치에서 엔터를 그리드 ㅍ 키 왼쪽 끝 ~ 내림 키 앞으로 (사용자 결정 2026-11-21).
@@ -469,6 +475,7 @@ struct FunctionRowView: View {
         return width
     }
 
+    /// 좁히지 않은 ⏎ 폭(원모아 `standardReturnWidth`). 긋기 펑크 폭은 이 값으로 정한다 — 좁힌 폭으로 정하면 펑크 키까지 커진다.
     var baseReturnWidth: CGFloat {
         let centerKeyWidth = KeyboardMetrics.centerKeyWidth(for: totalWidth)
         let usesWideBackspace = layoutCustomization.slotA == .fullPackage
@@ -487,7 +494,7 @@ struct FunctionRowView: View {
 
     var availableWidthWithoutReturn: CGFloat {
         // Default layout: 5 children (toggles + space + punct + return) → 4 internal gaps.
-        max(0, effectiveTotalWidth - returnWidth - spacing * 4)
+        max(0, effectiveTotalWidth - baseReturnWidth - spacing * 4)
     }
 
     var symbolToggleWidth: CGFloat {
@@ -848,6 +855,9 @@ struct SpaceKeyView: View {
     var body: some View {
         Text("space")
             .font(.system(size: 16))
+            // 좁은 배치(가운데 하한 + 지구본·내림 키)에서 "spac/e" 로 접히지 않게 — 맞으면 그대로.
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
             .foregroundColor(themeTextColor.opacity(0.6))
             .frame(width: width, height: height)
             .background(

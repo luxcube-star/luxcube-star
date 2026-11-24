@@ -39,6 +39,12 @@ struct InputBehaviorSettingsView: View {
             }
 
             Section {
+                Toggle("괄호 입력 후 글자 자판으로", isOn: $settings.returnToLettersAfterBracket)
+            } footer: {
+                Text("기호 자판(!#1)에서 괄호를 누르면 바로 원래 한글·영문 자판으로 돌아갑니다. 괄호 자동 닫기와 함께 켜면 ( ) 안에 바로 글자를 칠 수 있습니다.")
+            }
+
+            Section {
                 Toggle("더블 스페이스로 마침표 입력", isOn: $settings.periodOnDoubleSpaceEnabled)
             } footer: {
                 Text("글자 뒤에서 스페이스를 두 번 누르면 마침표와 공백(. )으로 바꿉니다.")
@@ -48,6 +54,12 @@ struct InputBehaviorSettingsView: View {
                 Toggle("잠시 멈추면 저절로 띄기", isOn: $settings.autoSpaceOnPauseEnabled)
             } footer: {
                 Text("한글을 치다가 1초 동안 멈추면 한 칸 띄웁니다. 바로 뒤에 . , ? ! 를 치면 그 칸을 지우고 붙입니다. 백스페이스를 누르면 스페이스·엔터를 직접 치거나 추천 단어를 고를 때까지 쉽니다. 글 가운데와 이메일·주소·전화번호·비밀번호 입력란에서는 띄우지 않습니다.")
+            }
+
+            Section {
+                Toggle("사전 단어 추천 (원모아)", isOn: $settings.wordSuggestionEnabled)
+            } footer: {
+                Text("새모아의 학습 추천 대신 아이폰에 들어 있는 사전으로 입력 중인 단어의 완성 후보를 보여 줍니다(배우지 않음). 켜면 위의 단어 추천(학습)이 꺼지고, 그것을 켜면 이것이 꺼집니다 — 한 번에 하나만. 이메일·주소·숫자 입력란에서는 나타나지 않습니다.")
             }
 
             Section {

@@ -59,7 +59,7 @@ moa-plus/
 │   │   ├── ConsonantKeyView.swift     # 개별 키 (테마/힌트/사이드/모음 미리보기/Shift 대문자)
 │   │   ├── FunctionRowView.swift      # 하단 기능키 (한/영 + 긋기 + space drag)
 │   │   ├── GestureOverlayView.swift   # 제스처 시각화
-│   │   └── AbbreviationCandidateView.swift  # 약어 후보 바
+│   │   └── AbbreviationCandidateView.swift  # 약어 후보 바 + 단어 추천 바(WordSuggestionBarView)
 │   └── Utilities/
 │       ├── HangulConstants.swift      # composeSyllable (.ㆍ 가드)
 │       ├── KeyboardMetrics.swift      # 한글/영문/심볼 layout + 모드별 keyWidth/centerKeyWidth
@@ -384,6 +384,7 @@ Row 3: ⇧ z x c v b n m ⌫        (9키, shift+letter+backspace)
   `canSwitchInputMode` 기본 `false`, 익스텐션은 `KeyboardViewController` 가 `viewDidLoad` + **`viewWillAppear` 매회**
   밀어넣고(세션 중 변화 반영), 호스트 앱 미리보기는 `DeviceSafeArea.likelyNeedsGlobeKey`(아이패드 또는 앱 창
   하단 안전영역 0) 추정. 탭 → `KeyboardViewModel.switchKeyboard()` → `advanceToNextInputMode()`
+- **엔터 키 좁게 × 아이패드 맞춤 (원모아 v2.3.1 합침 2026-11-24)**: `returnWidth` = min(맞춘 폭, 좁게 폭) — 둘 다 줄이기만 한다. 펑크 폭 기준은 좁히지 않은 `baseReturnWidth`(원모아 `standardReturnWidth`) — 그래서 아이패드 맞춤에서 펑크 폭이 예전(맞춘 엔터 기준)보다 조금 좁고 스페이스바가 그만큼 넓다
 - **아이패드 숫자패드 왼쪽 배치 엔터 (사용자 결정 2026-11-21)**: 분리 배치(`usesIPadSplit` · 한글)에서 그리드는 화면 폭의 69% 인데 엔터 폭(`baseReturnWidth`)은
   화면 전체를 그리드로 친 키 크기라 넓었다. 숫자패드가 **왼쪽**이면 `KeyboardView` 가 `KeyboardMetrics.iPadSplitReturnLeadingX`(그리드 ㅍ 키 왼쪽 끝, 행 좌표)를
   `FunctionRowView.returnLeadingX` 로 넘기고, 엔터 = 그 자리 ~ 내림 키 앞(`alignedReturnWidth`), 남는 폭은 스페이스바 — 스페이스바(+펑크 키) 끝이 ㅊ 키 끝.
@@ -422,6 +423,10 @@ Row 3: ⇧ z x c v b n m ⌫        (9키, shift+letter+backspace)
 - 배경은 한손 모드일 때 바깥에서 한 번만 그린다(`keyboardContent(drawsBackground:)`). 배경 사진은 띠 폭을
   `keyboardBackground(photoFocusInsets:)` 로 넘겨 본체 기준으로 놓는다(이슈 #39 — 위 "배경 사진 맞춤 · 크기")
 - 폭 하한 0.70 = 375pt + 지구본 표시에서도 기능행이 맞는 선 (`OneHandedLayoutTests`). 하한을 내리면 이 테스트로 확인
+- **가운데(`.center`, 좌우 여백 — 앱스토어 리뷰 2026-10)**: 띠 버튼 없이 양옆을 같게 비운다(사진도 양쪽 절반씩 `photoFocusInsets`).
+  띠가 없어 내림 키는 **기능행에 남으므로** 폭 범위가 따로다(`centerWidthRatioRange` 0.80~0.96, 저장값 `oneHandedWidthRatio` 공유 —
+  슬라이더·실제 폭 모두 `widthRatioBounds`). 0.70 에서는 375pt + 지구본 + 내림 키의 스페이스바가 키 한 칸보다 좁다(실측).
+  키보드에서 빠져나오는 버튼이 없어 설정 화면에서만 바꾼다. 렌더 `KeyboardSnapshotTests.test_snapshot_centerPlacement`
 - 이름을 손이 아니라 **위치**로 붙였다 — 긋기 프리셋 "오른손용/왼손용/양손용" 과 혼동(이슈 #31)
 - 띠 버튼 변경은 전체 접근 OFF 면 App Group 에 못 써 다음 `loadAll()` 에서 원래 값으로 돌아온다.
   그래서 호스트 복귀(`NSExtensionHostDidBecomeActive`)의 `loadAll()` 은 `hasFullAccess` 일 때만 돈다 —
@@ -568,6 +573,7 @@ KeyboardSettings (싱글톤, App Group UserDefaults, ObservableObject)
 │                                             — 기호·엔터는 설정 무관 항상 유지)
 ├── abbreviationTriggerPolicy: .safe/.free  (신규 트리거 등록 제한 — 메인 앱 검증 전용)
 ├── periodOnDoubleSpaceEnabled: Bool        (더블 스페이스 → 마침표)
+├── wordSuggestionEnabled: Bool             (원모아 사전 단어 추천 바, 기본 OFF — 새모아 학습 추천과 한 번에 하나만)
 ├── englishAutoCapitalizeEnabled: Bool      (영문 문장 첫 글자 대문자, 기본 OFF)
 ├── englishLongPressUppercaseEnabled: Bool  (영문 letter 롱프레스 = 대문자, 기본 ON)
 ├── layoutCustomization: LayoutCustomization (프리셋/슬롯/펑크 구성 + vowelKeyBehavior)
@@ -579,11 +585,14 @@ KeyboardSettings (싱글톤, App Group UserDefaults, ObservableObject)
 ├── keyboardAutoBottomInsetEnabled: Bool    (홈 인디케이터 구역 자동 회피, 기본 ON)
 ├── keyboardExtraBottomInset: Double        (자동 여백 위에 더할 추가 여백 0~34pt, 기본 0)
 ├── keyboardPlacement: KeyboardPlacement   (한손 모드 .full 기본/.left/.right) + oneHandedWidthRatio (0.70~0.90)
+├── compactReturnKeyEnabled: Bool           (⏎ 를 키 한 칸 폭으로, 기본 OFF. 남는 폭은 스페이스바만 — 펑크 폭은 좁히기 전 ⏎ 기준)
 ├── showGlobeKey: Bool                      (v2.2.6 부터 렌더 미사용 — 지구본은 needsInputModeSwitchKey 로 자동)
 ├── consonantDiagonalDerivationEnabled: Bool (자음 대각선 진입 파생, 기본 OFF=순정 모아키)
 ├── cursorMoveBySpaceDragEnabled: Bool      (Space 드래그 커서 이동, 기본 ON)
 ├── cursorRepeatSpeed: Int                  (Space 드래그 양끝 연속 이동 속도, 0/1/2 기본 1)
 ├── autoBracketEnabled: Bool
+├── returnToLettersAfterBracket: Bool       (기호 자판에서 괄호 탭 → 글자 자판, 기본 OFF. 탭 처리 중이라 toggleSymbolMode 를
+│                                             부르지 않는다 — supersedeHeldGridKey 가 떼는 키를 한 번 더 확정함)
 ├── wordDeleteEnabled: Bool
 ├── backspaceDeletesWholeSyllable: Bool  (조합 중 받침 없는 글자를 한 번에, 기본 OFF=자소 단위)
 ├── wordDeleteDelay: Double
@@ -707,6 +716,40 @@ v2.2.5 까지 ↗/↘ 를 꺼도 ㅣ/ㅡ 가 들어갔다 — `normalizedDirecti
 (`DirectionPieChart.columnCorrectionSlices`)는 편집 중인 열 회전 값을 받으므로 `effectiveAxisRotation` 만
 더한다. 회전을 새로 읽는 곳도 `axisRotation` 을 직접 쓰지 말 것
 
+### 원모아 사전 단어 추천 (원모아 v2.3.1 합침 2026-11-24, 설정 `wordSuggestionEnabled` 기본 OFF)
+- **새모아에서는 학습 추천(`predictionEnabled`)과 한 번에 하나만 켜진다** (사용자 결정 2026-11-24 1가 — 섞는 것은 나중에 논의).
+  `KeyboardSettings` 두 설정의 didSet 이 서로를 끈다. 후보 바 자리는 새모아 `@Published isCandidateBarVisible`
+  (`updateCandidateBarVisibility` = 약어 ∨ 사전 추천 바 ∨ (학습 추천 ON && !previewMode)) 하나 — 원모아의 계산 속성 ·
+  컨트롤러 `combineLatest` 는 쓰지 않는다. 뷰는 약어 → 사전 추천 바 → 학습 추천 바 순.
+  추천 뒤 문장부호 공백 거두기는 새모아 `autoSpaceJustInserted` 와 원모아 `pendingSuggestionSpace` 두 갈래 — 한쪽이 거뒀으면 다른 쪽은 안 지운다
+- 원모아 v2.3.1 의 「제스처 미리보기에 조합될 글자」(`previewSyllable`)는 가져오지 않았다(사용자 결정 2026-11-24 — 새모아는 이미 완성될 글자를 크게 보여 줌)
+- 후보 소스는 iOS 내장 `UITextChecker.completions(..., language: "ko_KR"/"en_US")`. `availableLanguages` 에 한국어가
+  **없는데도** ko_KR 완성어가 자모 단위로 동작한다(안 → 아니·아니면, 감ㅅ → 감사…) — 문서에 없는 동작이라 OS 업데이트로
+  바뀔 수 있다(`KeyboardViewModelWordSuggestionTests` 가 비면 여기부터 의심). `guesses`(오타 후보)는 실기기 iOS 27 에서
+  빈 배열 — 오타 보정 소스로 못 쓴다(시뮬레이터에서는 나와서 속기 쉽다)
+- **메인 스레드 전용**(`NS_SWIFT_UI_ACTOR`) — 백그라운드로 빼지 말 것. 실기기 실측(iOS 27.2.1, 재부팅 직후 포함): 언어별
+  첫 호출 ~100ms, 이후 ~7ms, 메모리 +2MB. 첫 호출은 `warmedUpSuggestionLanguages` 로 키보드 등장·한/영 전환 때 미리 치른다
+- 갱신 길목은 컨트롤러 `scheduleWordSuggestionRefresh()` **하나**(다음 런루프 틱, 키 하나에 여러 번 와도 한 번). 모든 글자
+  변경이 컨트롤러의 프록시 호출(`insertText`/`deleteBackward`/`updateComposingText`/`moveCursor`)을 지나므로 거기서 부르고,
+  호스트 편집(`textDidChange`)·캐럿 탭(`selectionDidChange`)·`viewDidAppear`·`$keyboardMode` 가 나머지를 덮는다.
+  뷰모델 입력 메서드마다 넣지 말 것
+- 바는 설정이 켜져 있으면 후보가 없어도 **상시** 자리를 차지한다(사용자 결정 — 후보 유무로 여닫으면 매 키마다 높이가 출렁임).
+  높이 조건은 `KeyboardViewModel.isCandidateBarVisible`(약어 후보 ∨ 단어 추천) 하나 — 뷰 그리드 배분과 컨트롤러
+  `observeCandidateBar` 의 `combineLatest` 가 같은 식이어야 기능행이 안 잘린다. 둘 다면 약어 후보가 그 자리를 쓴다
+- 입력란 제외(이메일·URL·숫자·비밀번호)는 `hostAllowsAutoCapitalization()` 재사용. 기호 모드는 바 유지·후보 없음
+- 선택(`acceptWordSuggestion`): `commitCurrent()` → 약어 버퍼 리셋 → 캐럿 앞 단어(끝에서 이어진 글자 + 안쪽 아포스트로피,
+  don't) 길이만큼 지움 → 단어 + 공백. 조합 확정을 빼면 다음 자음이 지운 글자 자리에서 이어 조합된다.
+  **글자를 지우기 전 가드 셋**(리뷰 반영 — 빼면 남의 글자를 지운다): ① 고를 때 캐럿 앞 단어가 후보를 만든 단어
+  (`suggestionSourceToken`)와 같아야 함 — 캐럿 탭을 알리지 않는 호스트(SwiftUI TextField)에서 낡은 후보가 다른 단어를
+  바꾼다 ② 캐럿이 단어 중간이면 후보 없음("hel|lo" → "hello lo") ③ 선택 영역이 있으면 후보 없음(첫 삭제가 선택을 지움,
+  델리게이트 `hostHasSelection()` — 프로토콜 본문 선언)
+- 추천 뒤 자동 공백에 `. , ! ?` 가 오면 공백을 거둔다(`pendingSuggestionSpace`, `inputSymbol` 한 곳 — 문장부호는 모두 여기로 온다).
+  다른 글자를 치면 다음 refresh 가 이 대기를 지운다
+- 바 자리 판정(`updateWordSuggestionBarVisibility`, 사전 조회 없음)은 `viewWillAppear` 에서 높이 계산 **전에** 동기로 —
+  비동기 갱신에만 맡기면 키보드가 뜬 뒤 한 번 더 커진다. `$keyboardMode` 구독은 `dropFirst` — 첫 값까지 받으면 첫 화면 전에
+  사전 첫 호출이 돈다
+- 호스트 앱 미리보기(`previewMode`)에는 바가 안 뜬다 — 설정 화면 높이 미리보기는 추천 줄을 반영하지 않는다
+
 ### 약어(단축어) 트리거 매칭 규칙
 - **엔진 트라이는 개수가 아니라 스토어가 조금이라도 바뀌면 다시 만든다** — 개수만 보면 편집·활성화 토글·삭제+추가가 떠 있는 키보드에 안 닿았다. 뷰모델이 `$shortcutExpansionStore` 를 구독해(willSet 발행이라 **받은 값**을 쓸 것) 다음 키 전에 반영한다 (`KeyboardViewModelAbbreviationReloadTests`)
 - 구분자는 두 종류다. **경계 구분자**(`" "` `"\n"`)는 버퍼를 리셋하고, **내용 겸 확정
@@ -731,6 +774,12 @@ v2.2.5 까지 ↗/↘ 를 꺼도 ㅣ/ㅡ 가 들어갔다 — `normalizedDirecti
   입력을 삼키는 셈이다. 이 설정을 끄면 되돌리기 삭제 길이도 `replacement.count` 로 줄어야
   한다 — 안 넣은 구분자를 넣은 것으로 계산하면 앞 글자를 한 자 더 먹는다
   (`testBackspace_afterExpansionWithoutConfirmSpace_restoresTrigger` 가드)
+- **iOS 텍스트 대치 (`systemTextReplacementEnabled`, 기본 OFF — 앱스토어 리뷰 2026-10)**: 키보드가 `requestSupplementaryLexicon` 으로
+  받은 항목을 엔진에 합친다(`viewWillAppear` 마다, 완료는 메인으로 넘김). 앱은 이 목록을 읽을 방법이 없다 — 화면에 안 나온다.
+  연락처 이름(입력 = 결과)·공백 든 단축키·대소문자 중복은 뺀다. **사용자 단축어가 이긴다**(꺼 둔 것 포함, 대소문자 무시) —
+  같은 트리거가 트라이 한 노드에 둘이면 자동 확장이 후보 고르기가 된다. `applyExpansionStore` 의 같음 비교는 **합친 결과**로 —
+  스토어만 비교하면 늦게 온 렉시콘·토글 변경이 트라이에 안 닿는다. 변환 항목은 받을 때 한 번만 만든다(매번 만들면 UUID 가
+  달라 그 비교가 매 키 실패). 단축어 마스터 토글이 꺼지면 같이 꺼진다 (`KeyboardViewModelTextReplacementTests`)
 - 등록 제한(`abbreviationTriggerPolicy`)은 **메인 앱 UI 전용**이다. 엔진에 길이 필터를 넣으면
   이미 등록된 1글자 단축어가 죽는다(소급 적용 없음)
 

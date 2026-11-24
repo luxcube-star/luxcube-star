@@ -113,6 +113,7 @@ struct KeyboardView: View {
             onLanguageSwitchPressed: { viewModel.switchKeyboard() },
             showGlobeKey: viewModel.canSwitchInputMode,
             showDismissKey: showsDismissKey,
+            compactReturnKey: settings.compactReturnKeyEnabled,
             onDismissKeyboardPressed: { viewModel.dismissKeyboard() },
             returnLeadingX: returnLeadingX,
             layoutCustomization: settings.layoutCustomization,
@@ -125,7 +126,18 @@ struct KeyboardView: View {
 
     var body: some View {
         GeometryReader { outer in
-            if let side = oneHandedSide(fullWidth: outer.size.width) {
+            if oneHandedSide(fullWidth: outer.size.width) == .center {
+                // 가운데: 양옆을 비우기만 한다(띠 버튼 없음 — 내림 키는 기능행에). 사진은 본체 기준.
+                let width = KeyboardPlacement.keyboardWidth(
+                    totalWidth: outer.size.width, ratio: settings.oneHandedWidthRatio,
+                    range: KeyboardPlacement.centerWidthRatioRange)
+                let margin = max(0, outer.size.width - width) / 2
+                keyboardContent(drawsBackground: false, dismissKeyInRow: true)
+                    .frame(width: width)
+                    .frame(maxWidth: .infinity)
+                    .background(keyboardBackground(photoFocusInsets: EdgeInsets(
+                        top: 0, leading: margin, bottom: 0, trailing: margin)))
+            } else if let side = oneHandedSide(fullWidth: outer.size.width) {
                 // 한손 모드: 본체는 좁힌 폭으로 그대로 그리고(그리드·기능행·팝업·오버레이가 모두
                 // 주어진 폭을 따른다), 빈쪽에 위치 전환 띠를 붙인다. 배경은 바깥에서 한 번만.
                 let width = KeyboardPlacement.keyboardWidth(
@@ -276,11 +288,12 @@ struct KeyboardView: View {
 
                 ZStack {
                     VStack(spacing: KeyboardMetrics.keySpacing) {
-                        // 후보 바 자리 (약어 후보 바 또는 단어 추천 바).
+                        // 후보 바 자리 (약어 후보 바 · 새모아 학습 추천 바 · 원모아 사전 추천 바).
                         // 자리를 차지할지는 `isCandidateBarVisible` **하나만** 본다 —
                         // KeyboardViewController 의 높이 보정이 같은 플래그를 구독하므로,
                         // 여기에 조건을 더 붙이면 둘이 어긋나 높이가 안 맞는다.
                         // 둘이 겹치면 약어 후보가 우선이다 (확정/취소를 기다리는 중이라서).
+                        // 두 추천은 설정에서 한 번에 하나만 켜진다 (사용자 결정 2026-11-24 1가).
                         if viewModel.isCandidateBarVisible {
                             if viewModel.isAbbreviationCandidateVisible {
                                 AbbreviationCandidateView(
@@ -289,6 +302,10 @@ struct KeyboardView: View {
                                     onConfirm: { expansion in viewModel.confirmAbbreviation(expansion) },
                                     onDismiss: { viewModel.dismissAbbreviation() }
                                 )
+                            } else if viewModel.isWordSuggestionBarVisible {
+                                WordSuggestionBarView(words: viewModel.wordSuggestions) { word in
+                                    viewModel.acceptWordSuggestion(word)
+                                }
                             } else {
                                 PredictionBarView(
                                     suggestions: viewModel.predictionSuggestions,

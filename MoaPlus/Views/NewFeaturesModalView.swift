@@ -23,6 +23,10 @@ struct NewFeaturesModalView: View {
         let features: [Feature]
     }
 
+    /// v2.3.1 — 리뷰 요청 5개(엔터 키 좁게·괄호 후 글자 자판·가운데 배치·텍스트 대치·미리보기 글자). 모두 기본 꺼짐이라
+    /// 켜는 경로를 적고, 미리보기를 켜 둔 사람은 모양이 바뀌므로 그 점을 적는다.
+    /// v2.3.0 — 단어 추천(메일 제보, 기본 OFF) + iOS 26+ 단축어 후보 흐림 수정. 켜는 경로와, 켜면 키보드가 높아지고
+    /// 전체 접근이 필요하다는 점을 적는다.
     /// v2.2.7 — 세로로 시작해 휘어 그은 대각선이 와·오·우·워 로 찍히던 오타(메일 제보). 완만하게 휘어 ㅘ 를
     /// 넣던 사람은 ㅣ 가 되므로 ㅘ 는 분명히 꺾으라고 적는다.
     /// v2.2.6 — 롱프레스 출력 반영(이슈 #37)·롱키 키 정체(#40)·진동 토글(#41), 배경 사진 맞춤·크기(#39),
@@ -37,6 +41,52 @@ struct NewFeaturesModalView: View {
     /// 프리셋(메일 제보 2건). v2.2.2 — 백스페이스 삭제 단위(앱스토어 리뷰). v2.2.1 — 복합모음 경로
     /// 옵션(이슈 #29). 이전 릴리스 항목들은 뒤에 남겨 둔다.
     private let groups: [FeatureGroup] = [
+        FeatureGroup(title: "새 설정 다섯 가지", features: [
+            Feature(
+                icon: "return",
+                tint: .blue,
+                title: "엔터 키 좁게",
+                detail: "설정 › 키보드 › 크기 · 전환 키에서 켜면 ⏎ 키가 다른 키 한 칸 폭으로 줄고, 그만큼 스페이스바가 넓어집니다."
+            ),
+            Feature(
+                icon: "parentheses",
+                tint: .orange,
+                title: "괄호 입력 후 글자 자판으로",
+                detail: "설정 › 키보드 › 입력 동작에서 켜면 기호 자판(!#1)에서 괄호를 누른 뒤 바로 한글·영문 자판으로 돌아갑니다."
+            ),
+            Feature(
+                icon: "rectangle.center.inset.filled",
+                tint: .teal,
+                title: "키보드를 가운데로",
+                detail: "설정 › 키보드 › 크기 · 전환 키 › 키보드 위치에서 '가운데'를 고르면 양옆에 같은 여백을 두고, 폭은 같은 화면에서 조절합니다."
+            ),
+            Feature(
+                icon: "text.insert",
+                tint: .green,
+                title: "iOS 텍스트 대치도 단축어로",
+                detail: "설정 › 단축어에서 켜면 아이폰 설정 › 일반 › 키보드 › 텍스트 대치에 등록한 단축키도 모아+에서 펼쳐집니다. 같은 단축키가 있으면 모아+ 단축어가 먼저입니다."
+            ),
+            Feature(
+                icon: "text.bubble",
+                tint: .purple,
+                title: "미리보기에 글자도 함께",
+                detail: "긋기 설정의 '제스처 미리보기'를 켜면 모음과 함께 조합될 글자(예: 와 ㅘ)도 보여 줍니다. 이미 켜 두셨다면 업데이트 뒤 글자가 함께 보입니다."
+            ),
+        ]),
+        FeatureGroup(title: "단어를 추천해 드려요", features: [
+            Feature(
+                icon: "text.word.spacing",
+                tint: .indigo,
+                title: "단어 추천",
+                detail: "설정 › 키보드 › 입력 동작 › 단어 추천을 켜면 키보드 위 줄에 지금 치고 있는 단어의 완성 후보가 나옵니다. 후보를 누르면 그 단어와 띄어쓰기가 들어갑니다.\n\n기본은 꺼져 있고, 켜면 키보드가 후보 줄만큼 높아집니다. 앱 설정을 키보드에 전달하려면 전체 접근 허용이 필요합니다. 후보는 기기에 들어 있는 사전에서 찾으며, 입력하신 내용은 외부로 전송되지 않습니다."
+            ),
+            Feature(
+                icon: "eye",
+                tint: .orange,
+                title: "단축어 후보가 또렷하게",
+                detail: "iOS 26 이상에서 단축어 후보 글자가 흐리게 보이던 문제를 고쳤습니다."
+            ),
+        ]),
         FeatureGroup(title: "휘어 그은 대각선도 ㅣ · ㅡ 로", features: [
             Feature(
                 icon: "arrow.up.right",
