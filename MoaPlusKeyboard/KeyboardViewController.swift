@@ -105,6 +105,8 @@ class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedback {
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        // 키 처리(메인 스레드) 밀림을 0.1초 박자로 잰다 — 햅틱 늦음 진단 (새모아 2026-11-27).
+        EarlyTouchDiagnostics.startStallWatch()
         // The keyboard extension lives in a separate process from the main
         // app, so @Published mutations there don't notify our singleton.
         // Reload from App Group UserDefaults on every appearance to pick up
@@ -186,6 +188,7 @@ class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedback {
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
+        EarlyTouchDiagnostics.stopStallWatch()
         EarlyTouchDiagnostics.flush(force: true)
         // 미뤄 둔 학습 데이터 저장을 키보드가 내려가기 전에 끝낸다.
         viewModel.flushPredictionSave()
@@ -598,12 +601,14 @@ extension KeyboardViewController: KeyboardViewModelDelegate {
     }
 
     func triggerHapticFeedback() {
+        EarlyTouchDiagnostics.hapticRequested()
         HapticManager.shared.playTap()
         playClickSoundIfEnabled()
     }
 
     /// 레이어 전환 키: 햅틱만 레이어 전환 쪽으로 바꾸고 클릭 사운드는 다른 키와 같다 (이슈 #41).
     func triggerLayerSwitchFeedback() {
+        EarlyTouchDiagnostics.hapticRequested()
         HapticManager.shared.playLayerSwitch()
         playClickSoundIfEnabled()
     }

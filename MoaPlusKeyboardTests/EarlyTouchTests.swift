@@ -139,6 +139,7 @@ final class EarlyTouchTests: XCTestCase {
         EarlyTouchDiagnostics.uptime = { [unowned self] in self.upNow }
         EarlyTouchDiagnostics.write = { [unowned self] in self.written.append($0) }
         EarlyTouchDiagnostics.writeDelayed = { [unowned self] in self.writtenDelayed.append($0) }
+        EarlyTouchDiagnostics.writeHaptic = { _ in }
         EarlyTouchDiagnostics.schedule = { $0() }
         EarlyTouchDiagnostics.keyboardHeight = 236
         EarlyTouchDiagnostics.startRecording()
@@ -317,6 +318,59 @@ final class EarlyTouchTests: XCTestCase {
         EarlyTouchDiagnostics.swiftUIStartedFirst(at: CGPoint(x: 100, y: 120))
         XCTAssertEqual(written.count, 1)
         XCTAssertTrue(writtenDelayed.isEmpty, "놓침 1번 실행이 47번 기록을 덮지 않는다")
+    }
+
+    /// 터치 → 햅틱 부름 시간을 칸으로 센다. 한 터치에 여러 번(백스페이스 반복) 불러도 한 번만.
+    func test_hapticRequested_bucketsLatencyOncePerTouch() {
+        startRecording()
+        var hapticLines: [String] = []
+        EarlyTouchDiagnostics.writeHaptic = { hapticLines.append($0) }
+        let key = CGRect(x: 80, y: 100, width: 50, height: 40)
+        lowerTouch(lookup(found: key))                 // 터치는 20ms 전
+        EarlyTouchDiagnostics.hapticRequested()        // 20ms
+        upNow += 0.5
+        EarlyTouchDiagnostics.hapticRequested()        // 같은 터치 — 안 셈
+        upNow += 1
+        lowerTouch(lookup(found: key))
+        upNow += 0.08
+        EarlyTouchDiagnostics.hapticRequested()        // 100ms
+        upNow += 1
+        lowerTouch(lookup(found: key))
+        upNow += 0.2
+        EarlyTouchDiagnostics.hapticRequested()        // 220ms — 바로 기록
+        upNow += 1
+        lowerTouch(lookup(found: key))
+        upNow += 0.73
+        EarlyTouchDiagnostics.hapticRequested()        // 750ms
+        upNow += 5
+        EarlyTouchDiagnostics.hapticRequested()        // 1.5초 넘은 터치 — 안 셈
+
+        let h = EarlyTouchDiagnostics.haptic
+        XCTAssertEqual([h.under50, h.from50to150, h.from150to500, h.over500], [1, 1, 1, 1])
+        XCTAssertEqual(h.maxMs, 750, accuracy: 0.5)
+        XCTAssertFalse(hapticLines.isEmpty, "150ms 넘으면 바로 기록")
+        XCTAssertTrue(EarlyTouchDiagnostics.hapticLine().contains(
+            "터치→햅틱 50ms 아래 1, 50~150ms 1, 150~500ms 1, 500ms 넘음 1"), EarlyTouchDiagnostics.hapticLine())
+    }
+
+    /// 0.1초 박자가 늦게 온 만큼 = 메인 스레드 밀림. 50ms 아래는 남기지 않는다.
+    func test_stallTick_recordsMainThreadStall() {
+        startRecording()
+        EarlyTouchDiagnostics.stallTick(at: 10.0)
+        EarlyTouchDiagnostics.stallTick(at: 10.13)     // 30ms 늦음 — 안 남김
+        XCTAssertEqual(EarlyTouchDiagnostics.haptic, .init())
+        EarlyTouchDiagnostics.stallTick(at: 10.43)     // 200ms 늦음
+        EarlyTouchDiagnostics.stallTick(at: 10.6)      // 70ms
+        let h = EarlyTouchDiagnostics.haptic
+        XCTAssertEqual(h.stallMaxMs, 200, accuracy: 0.5)
+        XCTAssertEqual(h.stallsOver100, 1)
+        EarlyTouchDiagnostics.predictionSaveTook(ms: 12)
+        EarlyTouchDiagnostics.predictionSaveTook(ms: 8)
+        XCTAssertEqual(EarlyTouchDiagnostics.haptic.saveMaxMs, 12)
+        let line = EarlyTouchDiagnostics.hapticLine()
+        XCTAssertTrue(line.contains("키 처리 밀림 최대 200ms"), line)
+        XCTAssertTrue(line.contains("100ms 넘게 1번"), line)
+        XCTAssertTrue(line.contains("학습 저장 최대 12ms"), line)
     }
 
     func test_alreadyPressed_isCountedAndWritten() {

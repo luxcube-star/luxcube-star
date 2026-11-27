@@ -82,6 +82,7 @@ final class DebugBoardStore: ObservableObject {
         키보드 실측: \(s.keyboardGeometryDiagnostic ?? "(키보드를 한 번도 띄우지 않음)")
         조기 터치: \(s.earlyTouchDiagnostic ?? "(기록 없음)")
         조기 터치 (마지막 지연 기록): \(s.earlyTouchDelayedDiagnostic ?? "(없음)")
+        햅틱: \(s.hapticDiagnostic ?? "(기록 없음)")
         자동 대문자: \(s.autoCapitalizeDiagnostic ?? "(아직 판정한 적 없음)")
         버릇 맞추기: \(s.gestureHabitEnabled ? "ON" : "OFF") / \(GestureHabitStore.loadShared()?.diagnosticLine ?? "(아직 기록 없음 — 전체 접근이 꺼져 있으면 앱에 안 옴)")
         단어 추천: \(s.predictionEnabled ? "ON" : "OFF") / 학습 \(s.predictionLearningEnabled ? "ON" : "OFF") / \(s.predictionDiagnostic ?? "(아직 기록 없음 — 키보드를 쓰고 닫으면 생김)")

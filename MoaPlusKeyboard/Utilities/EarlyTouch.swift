@@ -224,6 +224,97 @@ enum EarlyTouchDiagnostics {
     }
 
     private(set) static var counts = Counts()
+
+    // MARK: 햅틱 늦음 (새모아 2026-11-27 — 「누르고 한참 뒤에 울림」 제보)
+    //
+    // 누름이 제때 잡혔는데도(조기 터치 106/107) 햅틱이 늦게 느껴졌다. 햅틱은 누름 시작에서 바로 부르므로
+    // 남은 까닭은 ① 키 처리(메인 스레드)가 그 순간 밀렸거나 ② 진동 장치가 늦게 울린 것. 이 둘을 가른다:
+    // 터치 → 햅틱 부름 시간 · 메인 스레드 밀림(0.1초 박자) · 학습 저장 시간.
+    struct HapticCounts: Equatable {
+        var under50 = 0
+        var from50to150 = 0
+        var from150to500 = 0
+        var over500 = 0
+        var maxMs = 0.0
+        var maxAt: Date?
+        /// 0.1초 박자가 늦게 온 시간 = 메인 스레드가 다른 일로 붙잡혀 있던 시간.
+        var stallMaxMs = 0.0
+        var stallMaxAt: Date?
+        var stallsOver100 = 0
+        var saveMaxMs = 0.0
+    }
+    private(set) static var haptic = HapticCounts()
+    /// 이미 햅틱 시간을 잰 터치 — 백스페이스 반복처럼 한 터치에 여러 번 울려도 한 번만 센다.
+    private static var lastHapticTouchUptime: TimeInterval?
+    static var writeHaptic: (String) -> Void = defaultWriteHaptic
+    static let defaultWriteHaptic: (String) -> Void = { KeyboardSettings.shared.recordHapticDiagnostic($0) }
+    /// 이보다 짧은 밀림은 남기지 않는다(한 프레임 남짓 — 평소 그리기).
+    static let stallRecordFloorMs: Double = 50
+    static let stallTickInterval: TimeInterval = 0.1
+    private static var stallTimer: Timer?
+    private static var lastTickUptime: TimeInterval?
+
+    /// 컨트롤러가 탭 햅틱을 부르기 **직전**. 그 햅틱을 일으킨 터치 = 인식기가 본 가장 최근 터치(1.5초 안).
+    static func hapticRequested() {
+        guard isRecording, let touch = recent.last else { return }
+        let t = uptime()
+        guard t - touch.uptime <= 1.5, lastHapticTouchUptime != touch.uptime else { return }
+        lastHapticTouchUptime = touch.uptime
+        let ms = (t - touch.uptime) * 1000
+        if ms < 50 { haptic.under50 += 1 }
+        else if ms < 150 { haptic.from50to150 += 1 }
+        else if ms <= 500 { haptic.from150to500 += 1 }
+        else { haptic.over500 += 1 }
+        if ms > haptic.maxMs { haptic.maxMs = ms; haptic.maxAt = now() }
+        if ms >= 150 { schedule { flush(force: true) } }
+    }
+
+    /// 학습 저장(JSON 만들기 — 메인 스레드)에 걸린 시간.
+    static func predictionSaveTook(ms: Double) {
+        guard isRecording, ms > haptic.saveMaxMs else { return }
+        haptic.saveMaxMs = ms
+    }
+
+    /// 0.1초 박자 한 번. `actual` 이 예정보다 늦은 만큼이 메인 스레드 밀림이다.
+    static func stallTick(at actual: TimeInterval) {
+        defer { lastTickUptime = actual }
+        guard isRecording, let last = lastTickUptime else { return }
+        let lateMs = (actual - last - stallTickInterval) * 1000
+        guard lateMs >= stallRecordFloorMs else { return }
+        if lateMs > 100 { haptic.stallsOver100 += 1 }
+        if lateMs > haptic.stallMaxMs { haptic.stallMaxMs = lateMs; haptic.stallMaxAt = now() }
+        if lateMs > 100 { schedule { flush(force: true) } }
+    }
+
+    /// 키보드가 보이는 동안만 박자를 잰다(내려가 있을 때 깨어 있는 시간은 밀림이 아니다).
+    static func startStallWatch() {
+        guard isRecording, stallTimer == nil else { return }
+        lastTickUptime = nil
+        let timer = Timer(timeInterval: stallTickInterval, repeats: true) { _ in
+            EarlyTouchDiagnostics.stallTick(at: EarlyTouchDiagnostics.uptime())
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        stallTimer = timer
+    }
+
+    static func stopStallWatch() {
+        stallTimer?.invalidate()
+        stallTimer = nil
+        lastTickUptime = nil
+    }
+
+    static func hapticLine() -> String {
+        let h = haptic
+        func ms(_ v: Double) -> String { String(format: "%.0fms", v) }
+        func at(_ d: Date?) -> String { d.map { formatter.string(from: $0) } ?? "-" }
+        var parts: [String] = []
+        parts.append("\(formatter.string(from: since)) 부터")
+        parts.append("터치→햅틱 50ms 아래 \(h.under50), 50~150ms \(h.from50to150), 150~500ms \(h.from150to500), 500ms 넘음 \(h.over500)")
+        parts.append("최대 \(ms(h.maxMs)) (\(at(h.maxAt)))")
+        parts.append("키 처리 밀림 최대 \(ms(h.stallMaxMs)) (\(at(h.stallMaxAt))) · 100ms 넘게 \(h.stallsOver100)번")
+        parts.append("학습 저장 최대 \(ms(h.saveMaxMs))")
+        return parts.joined(separator: " · ")
+    }
     private(set) static var since = Date()
     private static var lastWrite: Date?
 
@@ -323,10 +414,12 @@ enum EarlyTouchDiagnostics {
     }
 
     static func flush(force: Bool = false) {
-        guard isRecording, counts != Counts() else { return }
+        guard isRecording, counts != Counts() || haptic != HapticCounts() else { return }
         let t = now()
         if !force, let last = lastWrite, t.timeIntervalSince(last) < writeInterval { return }
         lastWrite = t
+        if haptic != HapticCounts() { writeHaptic(hapticLine()) }
+        guard counts != Counts() else { return }
         let text = line()
         write(text)
         if counts.swiftUIFirstLower > 0,
@@ -377,6 +470,10 @@ enum EarlyTouchDiagnostics {
         write = defaultWrite
         writeDelayed = defaultWriteDelayed
         storedDelayedRecord = { nil }
+        writeHaptic = defaultWriteHaptic
+        haptic = HapticCounts()
+        lastHapticTouchUptime = nil
+        stopStallWatch()
         schedule = { DispatchQueue.main.async(execute: $0) }
         keyboardHeight = 0
         counts = Counts()

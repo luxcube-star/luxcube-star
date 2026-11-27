@@ -45,6 +45,7 @@ final class KeyboardSettings: ObservableObject {
         static let earlyTouchDelayedDiagnostic = "earlyTouchDelayedDiagnostic"
         static let earlyTouchDelayedSince = "earlyTouchDelayedSince"
         static let earlyTouchDelayedMisses = "earlyTouchDelayedMisses"
+        static let hapticDiagnostic = "hapticDiagnostic"
         static let autoCapitalizeDiagnostic = "autoCapitalizeDiagnostic"
         static let predictionDiagnostic = "predictionDiagnostic"
         static let bracketReturnDiagnostic = "bracketReturnDiagnostic"
@@ -766,6 +767,15 @@ final class KeyboardSettings: ObservableObject {
         defaults.set(text, forKey: Keys.earlyTouchDelayedDiagnostic)
         defaults.set(since.timeIntervalSince1970, forKey: Keys.earlyTouchDelayedSince)
         defaults.set(misses, forKey: Keys.earlyTouchDelayedMisses)
+    }
+
+    /// 터치 → 햅틱 부름 시간 · 키 처리 밀림 · 학습 저장 시간 (`EarlyTouchDiagnostics.hapticLine`, 새모아 2026-11-27).
+    func recordHapticDiagnostic(_ text: String) {
+        defaults.set(text, forKey: Keys.hapticDiagnostic)
+    }
+
+    var hapticDiagnostic: String? {
+        defaults.string(forKey: Keys.hapticDiagnostic)
     }
 
     /// 저장된 지연 기록의 (실행 시작 시각, 아래쪽 놓침 수). 예전 판이 쓴 기록엔 없다 → nil(바꿔도 됨).

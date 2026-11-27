@@ -2055,7 +2055,9 @@ class KeyboardViewModel: ObservableObject {
     private func savePredictionNow() {
         predictionSaveWorkItem = nil
         predictionStatsDirty = false
+        let saveStart = ProcessInfo.processInfo.systemUptime
         PredictionStore.save(predictionEngine.model)
+        EarlyTouchDiagnostics.predictionSaveTook(ms: (ProcessInfo.processInfo.systemUptime - saveStart) * 1000)
         KeyboardSettings.shared.recordPredictionDiagnostic(predictionEngine.diagnosticLine)
     }
 
