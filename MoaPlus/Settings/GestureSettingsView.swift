@@ -227,8 +227,22 @@ struct GestureSettingsView: View {
             }
             Section {
                 Toggle("누를 때 ㅣ · ㅜ · ㅓ 구역 보기", isOn: $settings.showVowelZoneOnPress)
+                if settings.showVowelZoneOnPress {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text("구역 크기")
+                            Spacer()
+                            Text(String(format: "키 %.1f칸", settings.vowelZoneRadiusScale))
+                                .foregroundColor(.secondary)
+                                .monospacedDigit()
+                        }
+                        Slider(value: $settings.vowelZoneRadiusScale,
+                               in: VowelZoneGeometry.radiusScaleRange,
+                               step: VowelZoneGeometry.radiusScaleStep)
+                    }
+                }
             } footer: {
-                Text("자음 키를 누르는 동안 누른 자리를 가운데로 ㅣ · ㅜ · ㅓ 세 구역을 반투명 부채꼴로 보여 줍니다. 경계는 방향 설정 · 세로 줄 보정 · 새모아가 맞춘 각도를 그대로 따릅니다. 손을 떼면 사라집니다. 4방향 전용이면 ㅜ · ㅓ 만 보입니다.")
+                Text("자음 키를 누르는 동안 누른 자리를 가운데로 ㅣ · ㅜ · ㅓ 세 구역을 반투명 부채꼴로 보여 줍니다. 경계는 방향 설정 · 세로 줄 보정 · 새모아가 맞춘 각도를 그대로 따릅니다. 손을 떼면 사라집니다. 4방향 전용이면 ㅜ · ㅓ 만 보입니다. 구역 크기는 누른 자리에서 부채꼴 끝까지의 길이(키 몇 칸)입니다 — 손가락에 가리면 키우세요. 키보드 밖으로는 그려지지 않아 맨 윗줄은 위쪽이 잘립니다.")
             }
         }
         .navigationTitle("긋기 입력 설정")

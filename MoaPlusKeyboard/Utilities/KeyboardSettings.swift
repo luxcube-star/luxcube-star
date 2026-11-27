@@ -34,6 +34,7 @@ final class KeyboardSettings: ObservableObject {
         static let shortcutExpansions = "shortcutExpansions"
         static let showGesturePreview = "showGesturePreview"
         static let showVowelZoneOnPress = "showVowelZoneOnPress"
+        static let vowelZoneRadiusScale = "vowelZoneRadiusScale"
         static let gesturePreviewPosition = "gesturePreviewPosition"
         static let showSecondaryHints = "showSecondaryHints"
         static let hintSize = "hintSize"
@@ -254,6 +255,11 @@ final class KeyboardSettings: ObservableObject {
     /// 자음 키를 누르는 동안 ㅣ · ㅜ · ㅓ 구역을 부채꼴로 보여 준다 (새모아 개선 방안 14번, 기본 끔).
     @Published var showVowelZoneOnPress: Bool = false {
         didSet { guard !isLoading else { return }; writePrimitive(showVowelZoneOnPress, forKey: Keys.showVowelZoneOnPress) }
+    }
+
+    /// 그 구역 부채꼴의 반지름 = 자음 키 한 칸 폭 × 이 값 (1~3칸, 0.5칸씩, 기본 2칸 — 사용자 결정 2026-11-27 1다).
+    @Published var vowelZoneRadiusScale: Double = VowelZoneGeometry.defaultRadiusScale {
+        didSet { guard !isLoading else { return }; writePrimitive(vowelZoneRadiusScale, forKey: Keys.vowelZoneRadiusScale) }
     }
 
     /// 긋기 미리보기를 띄울 자리. 기본은 오른손 기준(키보드 왼쪽 위) — 원본의 "누른 키 반대편" 규칙은
@@ -662,6 +668,7 @@ final class KeyboardSettings: ObservableObject {
                    .flatMap(AbbreviationTriggerPolicy.init(rawValue:)) ?? .safe)
         assign(\.showGesturePreview, defaults.object(forKey: Keys.showGesturePreview) as? Bool ?? true)
         assign(\.showVowelZoneOnPress, defaults.object(forKey: Keys.showVowelZoneOnPress) as? Bool ?? false)
+        assign(\.vowelZoneRadiusScale, defaults.object(forKey: Keys.vowelZoneRadiusScale) as? Double ?? VowelZoneGeometry.defaultRadiusScale)
         assign(\.gesturePreviewPosition,
                (defaults.string(forKey: Keys.gesturePreviewPosition)).flatMap(GesturePreviewPosition.init(rawValue:)) ?? .topLeft)
         assign(\.showSecondaryHints, defaults.object(forKey: Keys.showSecondaryHints) as? Bool ?? true)
@@ -895,6 +902,7 @@ final class KeyboardSettings: ObservableObject {
         abbreviationTriggerPolicy = .safe
         showGesturePreview = true
         showVowelZoneOnPress = false
+        vowelZoneRadiusScale = VowelZoneGeometry.defaultRadiusScale
         gesturePreviewPosition = .topLeft
         showSecondaryHints = true
         hintSize = 1

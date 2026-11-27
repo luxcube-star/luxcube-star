@@ -2,7 +2,7 @@ import SwiftUI
 
 // MARK: - 누를 때 ㅣ · ㅜ · ㅓ 구역 보기 (새모아 개선 방안 14번, 2026-11-27 사용자 「구현해」)
 //
-// 자음 키를 누르는 동안 누른 자리를 가운데로 ㅣ · ㅜ · ㅓ 세 구역만 반투명 부채꼴로 그린다.
+// 자음 키를 누르는 동안 누른 자리를 가운데로 ㅣ · ㅜ · ㅓ 세 구역만 반투명 부채꼴로 그린다(반지름 = 키 폭 × 설정 배율).
 // 셋이 헷갈려 오타가 난다는 사용자 제보에서 나왔다(2026-11-13 정함 — 기본 끔 · 원은 키 두 개 폭쯤 ·
 // 손 떼면 사라짐 · 모음 키 · 영문 · 숫자 키 제외 · 4방향 전용 모드는 ㅜ · ㅓ 만).
 // 구역은 분석기와 **같은 식**으로 만든다 — 방향 설정 · 전체 회전 · 세로 줄 보정 · 그 줄의 ㅣ 폭 보정 ·
@@ -56,8 +56,18 @@ enum VowelZoneGeometry {
         }
     }
 
-    /// 부채꼴 반지름 = 키 한 칸 폭(원 지름 = 키 두 개 폭).
-    static func radius(keyWidth: CGFloat) -> CGFloat { max(keyWidth, 30) }
+    /// 반지름 배율(키 몇 칸) — 설정 슬라이더 범위 · 기본값. 처음엔 1칸 고정이었는데 손가락에 가려 작다는
+    /// 사용자 제보로 고르게 했다(2026-11-27 1다 · 2가).
+    static let radiusScaleRange: ClosedRange<Double> = 1.0...3.0
+    static let radiusScaleStep: Double = 0.5
+    static let defaultRadiusScale: Double = 2.0
+
+    /// 부채꼴 반지름 = 키 한 칸 폭 × 배율(범위 밖·NaN 은 잘라 씀).
+    static func radius(keyWidth: CGFloat, scale: Double = defaultRadiusScale) -> CGFloat {
+        let s = scale.isFinite ? min(max(scale, radiusScaleRange.lowerBound), radiusScaleRange.upperBound)
+                               : defaultRadiusScale
+        return max(keyWidth, 30) * CGFloat(s)
+    }
 }
 
 struct VowelZoneOverlayView: View {

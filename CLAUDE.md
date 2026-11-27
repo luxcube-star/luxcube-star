@@ -900,6 +900,8 @@ v2.2.5 까지 ↗/↘ 를 꺼도 ㅣ/ㅡ 가 들어갔다 — `normalizedDirecti
 - 구역 식 `VowelZoneGeometry.zones` 는 분석기(`effectiveSectors` + `recognizerRotationOffset` + 버릇 각도)와 같다 — 앱 `DirectionPieChart.keySlices`
   와도 같은 식. 한쪽을 바꾸면 같이 바꿀 것 (`VowelZoneGeometryTests` 가 그린 구역 가운데로 그어 분석기 판정과 맞춰 본다).
   ㅣ 는 `.vowelI` 로 매핑된 대각선만, 폭 0(6방향 프리셋의 끈 쪽)은 뺀다. 4방향 전용은 90° 칸의 ㅜ · ㅓ 만
+- 크기 `vowelZoneRadiusScale`(반지름 = 키 폭 × 1~3칸, 0.5칸씩, 기본 2칸 — 사용자 결정 2026-11-27 1다, 처음 1칸 고정은 손가락에 가려 작다는 제보).
+  그림은 키보드 뷰 밖으로 못 나가 맨 윗줄은 위쪽이 잘린다
 
 ### 멈추면 저절로 띄기 (새모아, 2026-11-11 사용자 결정)
 - 한글을 친 뒤 `KeyboardViewModel.autoSpaceDelay`(1초 고정) 동안 키를 안 누르면 `inputSpace()` 를 그대로 부른다 — 조합 끝내기 · 단축어 · 단어 학습 · 스페이스 두 번 → 마침표가 직접 친 스페이스와 같게 돈다.

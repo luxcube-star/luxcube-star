@@ -359,7 +359,8 @@ struct KeyboardView: View {
                         VowelZoneOverlayView(
                             center: start,
                             zones: VowelZoneGeometry.zones(settings: settings.gestureSettings, info: zone),
-                            radius: VowelZoneGeometry.radius(keyWidth: useSplit ? moakiCenterKeyWidth : centerKeyWidth))
+                            radius: VowelZoneGeometry.radius(keyWidth: useSplit ? moakiCenterKeyWidth : centerKeyWidth,
+                                                            scale: settings.vowelZoneRadiusScale))
                     }
 
                     // Gesture overlay (shown when enabled or forced, and in Korean mode)

@@ -230,7 +230,7 @@ enum SettingsCatalog {
             title: "누를 때 ㅣ · ㅜ · ㅓ 구역 보기",
             icon: "circle.lefthalf.filled",
             destination: .gesture,
-            keywords: ["구역", "부채꼴", "ㅣ", "ㅜ", "ㅓ", "각도", "경계", "헷갈", "오타", "보기"]
+            keywords: ["구역", "부채꼴", "ㅣ", "ㅜ", "ㅓ", "각도", "경계", "헷갈", "오타", "보기", "구역 크기", "크기", "작아", "가려"]
         ),
         SettingsEntry(
             title: "제스처 미리보기 · 위치",

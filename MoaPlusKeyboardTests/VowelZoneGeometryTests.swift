@@ -56,4 +56,13 @@ final class VowelZoneGeometryTests: XCTestCase {
         let zones = VowelZoneGeometry.zones(settings: settings, info: VowelZoneInfo(columnId: 3, habitRotation: 0))
         XCTAssertEqual(zones.filter { $0.vowel == "ㅣ" }.count, 1)
     }
+
+    func test_radius_scalesWithKeyWidth_andClampsToRange() {
+        XCTAssertEqual(VowelZoneGeometry.radius(keyWidth: 60), 120, accuracy: 0.001)   // 기본 2칸
+        XCTAssertEqual(VowelZoneGeometry.radius(keyWidth: 60, scale: 1.5), 90, accuracy: 0.001)
+        XCTAssertEqual(VowelZoneGeometry.radius(keyWidth: 60, scale: 0.2), 60, accuracy: 0.001)
+        XCTAssertEqual(VowelZoneGeometry.radius(keyWidth: 60, scale: 9), 180, accuracy: 0.001)
+        XCTAssertEqual(VowelZoneGeometry.radius(keyWidth: 60, scale: .nan), 120, accuracy: 0.001)
+        XCTAssertEqual(VowelZoneGeometry.radius(keyWidth: 10, scale: 1), 30, accuracy: 0.001)  // 아주 좁은 키 하한
+    }
 }
