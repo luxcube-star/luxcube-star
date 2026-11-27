@@ -33,6 +33,7 @@ final class KeyboardSettings: ObservableObject {
         static let longPressPrimaryMigrated = "longPressPrimaryMigrated"
         static let shortcutExpansions = "shortcutExpansions"
         static let showGesturePreview = "showGesturePreview"
+        static let showVowelZoneOnPress = "showVowelZoneOnPress"
         static let gesturePreviewPosition = "gesturePreviewPosition"
         static let showSecondaryHints = "showSecondaryHints"
         static let hintSize = "hintSize"
@@ -248,6 +249,11 @@ final class KeyboardSettings: ObservableObject {
     /// 긋기 미리보기 (이 수정판은 기본 ON — 원본 모아+는 OFF).
     @Published var showGesturePreview: Bool = true {
         didSet { guard !isLoading else { return }; writePrimitive(showGesturePreview, forKey: Keys.showGesturePreview) }
+    }
+
+    /// 자음 키를 누르는 동안 ㅣ · ㅜ · ㅓ 구역을 부채꼴로 보여 준다 (새모아 개선 방안 14번, 기본 끔).
+    @Published var showVowelZoneOnPress: Bool = false {
+        didSet { guard !isLoading else { return }; writePrimitive(showVowelZoneOnPress, forKey: Keys.showVowelZoneOnPress) }
     }
 
     /// 긋기 미리보기를 띄울 자리. 기본은 오른손 기준(키보드 왼쪽 위) — 원본의 "누른 키 반대편" 규칙은
@@ -655,6 +661,7 @@ final class KeyboardSettings: ObservableObject {
                (defaults.object(forKey: Keys.abbreviationTriggerPolicy) as? String)
                    .flatMap(AbbreviationTriggerPolicy.init(rawValue:)) ?? .safe)
         assign(\.showGesturePreview, defaults.object(forKey: Keys.showGesturePreview) as? Bool ?? true)
+        assign(\.showVowelZoneOnPress, defaults.object(forKey: Keys.showVowelZoneOnPress) as? Bool ?? false)
         assign(\.gesturePreviewPosition,
                (defaults.string(forKey: Keys.gesturePreviewPosition)).flatMap(GesturePreviewPosition.init(rawValue:)) ?? .topLeft)
         assign(\.showSecondaryHints, defaults.object(forKey: Keys.showSecondaryHints) as? Bool ?? true)
@@ -887,6 +894,7 @@ final class KeyboardSettings: ObservableObject {
         abbreviationKeepConfirmSpaceEnabled = true
         abbreviationTriggerPolicy = .safe
         showGesturePreview = true
+        showVowelZoneOnPress = false
         gesturePreviewPosition = .topLeft
         showSecondaryHints = true
         hintSize = 1

@@ -17,6 +17,8 @@ class GestureState: ObservableObject {
     @Published var previewVowel: Jungseong?
     @Published var directions: [GestureDirection] = []
     @Published var startPoint: CGPoint?
+    /// 누른 자음 키의 ㅣ · ㅜ · ㅓ 구역 재료 (새모아 14번). 설정이 꺼져 있거나 자음 키가 아니면 nil.
+    @Published var vowelZone: VowelZoneInfo?
 }
 
 /// Long-press popup state — only popup overlay observes this
@@ -738,6 +740,7 @@ class KeyboardViewModel: ObservableObject {
     // 나머지 모음은 천지인 합성으로 쌓는다.
 
     func slotBVowelGestureStarted(at point: CGPoint) {
+        setVowelZone(nil)
         // 눌려 있던 그리드 키는 롤오버와 똑같이 먼저 정리한다 (이슈 #40 리뷰): 자기 획으로 확정하고
         // (팝업이 떠 있었으면 확정 없이 닫고) 그 손가락의 이후 신호를 버린다. 아래에서 분석기를
         // 초기화하고 `activeKey` 를 (-1,-1) 로 바꾸기 **전에** 불러야 한다 — 안 하면 그 키의 팝업
@@ -1385,6 +1388,7 @@ class KeyboardViewModel: ObservableObject {
     }
 
     func gestureStarted(row: Int, column: Int, at point: CGPoint) {
+        setVowelZone(nil)   // 자음 키일 때만 아래에서 다시 채운다
         // 같은 키를 다시 누르면 지난 롤오버 기록은 의미가 없다(그 손가락은 이미 뗐다).
         supersededKeys.removeAll { $0.row == row && $0.column == column }
         supersedeActiveGesture(byRow: row, column: column)
@@ -1421,6 +1425,10 @@ class KeyboardViewModel: ObservableObject {
                 gestureAnalyzer.columnId = KeyboardMetrics.columnIndex(for: consonant)
                 gestureAnalyzer.forceCardinalOnly = false
                 gestureAnalyzer.habit = habitAdjustment(for: consonant)
+                setVowelZone(KeyboardSettings.shared.showVowelZoneOnPress
+                             ? VowelZoneInfo(columnId: gestureAnalyzer.columnId,
+                                             habitRotation: gestureAnalyzer.habit.rotationDeg)
+                             : nil)
             case .vowelPrimitive:
                 // ㅣ/ㅡ 키는 4방향 파생모음만 쓰므로 카디널 스냅으로 인식해
                 // 기운 긋기(↖↗↙↘)가 의도한 ←→↑↓ 로 가게 한다.
@@ -1714,6 +1722,12 @@ class KeyboardViewModel: ObservableObject {
     // MARK: - 긋기 버릇 맞추기 (개선 방안 13번)
 
     /// 이 자음 키에 맞춘 값. 설정을 끄면 맞춘 값도 쓰지 않는다.
+    /// 같은 값이면 발행하지 않는다 — 누를 때마다 오버레이 트리를 다시 그리지 않게.
+    private func setVowelZone(_ zone: VowelZoneInfo?) {
+        guard gestureState.vowelZone != zone else { return }
+        gestureState.vowelZone = zone
+    }
+
     private func habitAdjustment(for consonant: Choseong) -> GestureHabitAdjustment {
         guard KeyboardSettings.shared.gestureHabitEnabled else { return .zero }
         return habitLearner.adjustment(for: consonant)

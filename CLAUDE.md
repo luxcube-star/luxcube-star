@@ -892,6 +892,15 @@ v2.2.5 까지 ↗/↘ 를 꺼도 ㅣ/ㅡ 가 들어갔다 — `normalizedDirecti
   (분석기와 같은 식 — `recognizerRotationOffset(forColumn:)` + 줄 ㅣ/ㅡ 폭 + 버릇 각도, 4방향이면 90° 넷) + 버릇을 뺀 경계 점선(`referenceBoundaries`).
   줄은 `KeyboardMetrics.columnIndex(for:)`. 분석기의 구역 식을 바꾸면 이 그림도 맞출 것
 
+### 누를 때 ㅣ · ㅜ · ㅓ 구역 보기 (새모아, 개선 방안 14번, 2026-11-27 사용자 「구현해」)
+- 설정 `showVowelZoneOnPress`(기본 OFF, 긋기 입력 설정). 자음 키를 누르는 동안 누른 자리(`GestureState.startPoint`)를 가운데로
+  ㅣ · ㅜ · ㅓ 구역만 반투명 부채꼴(반지름 = 키 한 칸 폭)로 그린다 — `VowelZoneOverlayView.swift`. 긋기 미리보기 밑, 롱키 팝업이 뜨면 숨김.
+- 재료 `GestureState.vowelZone`(줄 번호 · 버릇 각도)은 `gestureStarted` 자음 키에서만 채우고, 다른 키 · 슬롯 B 는 nil. 누름 시작은 조기 터치
+  경로로 오므로 아래쪽 줄도 바로 뜬다.
+- 구역 식 `VowelZoneGeometry.zones` 는 분석기(`effectiveSectors` + `recognizerRotationOffset` + 버릇 각도)와 같다 — 앱 `DirectionPieChart.keySlices`
+  와도 같은 식. 한쪽을 바꾸면 같이 바꿀 것 (`VowelZoneGeometryTests` 가 그린 구역 가운데로 그어 분석기 판정과 맞춰 본다).
+  ㅣ 는 `.vowelI` 로 매핑된 대각선만, 폭 0(6방향 프리셋의 끈 쪽)은 뺀다. 4방향 전용은 90° 칸의 ㅜ · ㅓ 만
+
 ### 멈추면 저절로 띄기 (새모아, 2026-11-11 사용자 결정)
 - 한글을 친 뒤 `KeyboardViewModel.autoSpaceDelay`(1초 고정) 동안 키를 안 누르면 `inputSpace()` 를 그대로 부른다 — 조합 끝내기 · 단축어 · 단어 학습 · 스페이스 두 번 → 마침표가 직접 친 스페이스와 같게 돈다.
 - 예약은 `inputConsonant`/`inputVowel` 뒤, 취소는 키를 누르는 순간(`keyPressFeedback` · `layerSwitchPressFeedback`)과 다른 입력 · 키보드 내려감(`endAutoSpaceSession`).

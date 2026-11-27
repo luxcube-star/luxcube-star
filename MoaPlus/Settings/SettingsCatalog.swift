@@ -227,6 +227,12 @@ enum SettingsCatalog {
             keywords: ["커서", "스페이스", "드래그", "이동", "연속"]
         ),
         SettingsEntry(
+            title: "누를 때 ㅣ · ㅜ · ㅓ 구역 보기",
+            icon: "circle.lefthalf.filled",
+            destination: .gesture,
+            keywords: ["구역", "부채꼴", "ㅣ", "ㅜ", "ㅓ", "각도", "경계", "헷갈", "오타", "보기"]
+        ),
+        SettingsEntry(
             title: "제스처 미리보기 · 위치",
             icon: "eye",
             destination: .gesture,

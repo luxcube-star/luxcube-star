@@ -352,6 +352,16 @@ struct KeyboardView: View {
                     .padding(KeyboardMetrics.keySpacing)
                     .padding(.bottom, bottomInset)
 
+                    // 누를 때 ㅣ · ㅜ · ㅓ 구역 (새모아 14번 — 기본 끔). 긋기 미리보기 밑에, 롱키 팝업이 뜨면 숨김.
+                    if let zone = gestureState.vowelZone, let start = gestureState.startPoint,
+                       gestureState.activeKey != nil, popupState.text == nil,
+                       viewModel.keyboardMode == .korean {
+                        VowelZoneOverlayView(
+                            center: start,
+                            zones: VowelZoneGeometry.zones(settings: settings.gestureSettings, info: zone),
+                            radius: VowelZoneGeometry.radius(keyWidth: useSplit ? moakiCenterKeyWidth : centerKeyWidth))
+                    }
+
                     // Gesture overlay (shown when enabled or forced, and in Korean mode)
                     if (settings.showGesturePreview || viewModel.forceShowGesturePreview) && viewModel.keyboardMode == .korean {
                         GestureOverlayView(
