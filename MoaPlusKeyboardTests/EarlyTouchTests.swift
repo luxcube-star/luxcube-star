@@ -258,6 +258,67 @@ final class EarlyTouchTests: XCTestCase {
         XCTAssertEqual(writtenDelayed.count, 1)
     }
 
+    /// 놓친 누름이 얼마나 늦었는지 칸으로 나누고, 같은 키 가운데 겹침이던 것을 따로 센다 (2026-11-27 새모아).
+    func test_swiftUIFirst_bucketsLatency_andCountsOverlappedSameKey() {
+        startRecording()
+        let key = CGRect(x: 80, y: 100, width: 50, height: 40)
+        // 0.08초 · 겹침
+        lowerTouch(y: 110, lookup(found: key, containing: 2))
+        upNow += 0.06
+        EarlyTouchDiagnostics.swiftUIStartedFirst(at: CGPoint(x: 100, y: 110))
+        // 0.32초 · 겹침 없음
+        upNow += 1
+        lowerTouch(y: 120, lookup(found: key))
+        upNow += 0.3
+        EarlyTouchDiagnostics.swiftUIStartedFirst(at: CGPoint(x: 100, y: 120))
+        // 0.77초 · 겹침
+        upNow += 1
+        lowerTouch(y: 130, lookup(found: key, containing: 3))
+        upNow += 0.75
+        EarlyTouchDiagnostics.swiftUIStartedFirst(at: CGPoint(x: 100, y: 130))
+        // 짝 터치 없음 — 칸에 안 넣음
+        upNow += 5
+        EarlyTouchDiagnostics.swiftUIStartedFirst(at: CGPoint(x: 100, y: 125))
+
+        let c = EarlyTouchDiagnostics.counts
+        XCTAssertEqual(c.swiftUIFirstLower, 4)
+        XCTAssertEqual(c.lateUnder150, 1)
+        XCTAssertEqual(c.late150to500, 1)
+        XCTAssertEqual(c.lateOver500, 1)
+        XCTAssertEqual(c.lowerSameKey, 3)
+        XCTAssertEqual(c.lowerSameKeyOverlapped, 2)
+        let line = EarlyTouchDiagnostics.line()
+        XCTAssertTrue(line.contains("아래쪽 놓침 늦음 150ms 아래 1, 150~500ms 1, 500ms 넘음 1, 같은 키 중 겹침 2"), line)
+    }
+
+    func test_line_omitsLatencyBuckets_whenNoLowerMiss() {
+        startRecording()
+        lowerTouch(lookup(found: CGRect(x: 80, y: 100, width: 50, height: 40)))
+        XCTAssertFalse(EarlyTouchDiagnostics.line().contains("아래쪽 놓침 늦음"))
+    }
+
+    /// 지연 기록은 같은 실행 · 더 많이(같게) 놓친 실행 · 3일 지난 기록일 때만 바꾼다.
+    /// 예전엔 놓침 1번짜리 실행이 47번짜리 기록을 덮었다 (2026-11-27 리포트).
+    func test_shouldReplaceDelayedRecord() {
+        let t0 = Date(timeIntervalSince1970: 1_800_000_000)
+        let later = t0.addingTimeInterval(3600)
+        XCTAssertTrue(EarlyTouchDiagnostics.shouldReplaceDelayedRecord(stored: nil, since: later, misses: 1, now: later))
+        XCTAssertTrue(EarlyTouchDiagnostics.shouldReplaceDelayedRecord(stored: (since: t0, misses: 47), since: t0, misses: 47, now: later),
+                      "같은 실행은 늘 갱신")
+        XCTAssertFalse(EarlyTouchDiagnostics.shouldReplaceDelayedRecord(stored: (since: t0, misses: 47), since: later, misses: 1, now: later))
+        XCTAssertTrue(EarlyTouchDiagnostics.shouldReplaceDelayedRecord(stored: (since: t0, misses: 47), since: later, misses: 47, now: later))
+        let fourDays = t0.addingTimeInterval(4 * 24 * 3600)
+        XCTAssertTrue(EarlyTouchDiagnostics.shouldReplaceDelayedRecord(stored: (since: t0, misses: 47), since: fourDays, misses: 1, now: fourDays))
+    }
+
+    func test_flush_keepsWorseDelayedRecord() {
+        startRecording()
+        EarlyTouchDiagnostics.storedDelayedRecord = { [unowned self] in (since: self.clock.addingTimeInterval(-3600), misses: 47) }
+        EarlyTouchDiagnostics.swiftUIStartedFirst(at: CGPoint(x: 100, y: 120))
+        XCTAssertEqual(written.count, 1)
+        XCTAssertTrue(writtenDelayed.isEmpty, "놓침 1번 실행이 47번 기록을 덮지 않는다")
+    }
+
     func test_alreadyPressed_isCountedAndWritten() {
         startRecording()
         EarlyTouchDiagnostics.earlyPressWhileAlreadyPressed()

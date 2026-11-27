@@ -43,6 +43,8 @@ final class KeyboardSettings: ObservableObject {
         static let keyboardGeometryDiagnostic = "keyboardGeometryDiagnostic"
         static let earlyTouchDiagnostic = "earlyTouchDiagnostic"
         static let earlyTouchDelayedDiagnostic = "earlyTouchDelayedDiagnostic"
+        static let earlyTouchDelayedSince = "earlyTouchDelayedSince"
+        static let earlyTouchDelayedMisses = "earlyTouchDelayedMisses"
         static let autoCapitalizeDiagnostic = "autoCapitalizeDiagnostic"
         static let predictionDiagnostic = "predictionDiagnostic"
         static let bracketReturnDiagnostic = "bracketReturnDiagnostic"
@@ -760,8 +762,17 @@ final class KeyboardSettings: ObservableObject {
 
     /// 아래쪽 누름을 SwiftUI 가 먼저 시작한(= 지연을 겪은) 마지막 실행의 기록. 다음 깨끗한
     /// 실행이 위 기록을 덮어써도 이건 남는다.
-    func recordEarlyTouchDelayedDiagnostic(_ text: String) {
+    func recordEarlyTouchDelayedDiagnostic(_ text: String, since: Date, misses: Int) {
         defaults.set(text, forKey: Keys.earlyTouchDelayedDiagnostic)
+        defaults.set(since.timeIntervalSince1970, forKey: Keys.earlyTouchDelayedSince)
+        defaults.set(misses, forKey: Keys.earlyTouchDelayedMisses)
+    }
+
+    /// 저장된 지연 기록의 (실행 시작 시각, 아래쪽 놓침 수). 예전 판이 쓴 기록엔 없다 → nil(바꿔도 됨).
+    var earlyTouchDelayedRecordMeta: (since: Date, misses: Int)? {
+        guard defaults.object(forKey: Keys.earlyTouchDelayedSince) != nil else { return nil }
+        return (Date(timeIntervalSince1970: defaults.double(forKey: Keys.earlyTouchDelayedSince)),
+                defaults.integer(forKey: Keys.earlyTouchDelayedMisses))
     }
 
     var earlyTouchDelayedDiagnostic: String? {

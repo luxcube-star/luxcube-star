@@ -169,6 +169,14 @@ enum EarlyTouchDiagnostics {
         var popupLastMs: Double?
         var alreadyPressed = 0
         var lastFarMiss: FarMiss?
+        /// 아래쪽 놓친 누름이 터치부터 얼마나 늦었나 (2026-11-27 새모아 — 햅틱 늦음 제보).
+        /// 짝 터치가 없어 못 잰 것은 넣지 않는다(= 아래쪽 − 세 칸 합).
+        var lateUnder150 = 0
+        var late150to500 = 0
+        var lateOver500 = 0
+        /// 「같은 키」 가운데 그 터치 자리에 등록 키가 둘 이상(겹침)이었던 것. 같은 키 판정은
+        /// 찾은 키의 **자리**만 보므로, 겹침이면 화면에서 사라진 키가 조기 시작을 받았을 수 있다.
+        var lowerSameKeyOverlapped = 0
     }
 
     /// 아래쪽 판정 비율(키보드 높이 대비). 2행(ㅁ~ㅎ)이 높이의 ~41% 에서 시작한다.
@@ -194,7 +202,25 @@ enum EarlyTouchDiagnostics {
 
     static let defaultWrite: (String) -> Void = { KeyboardSettings.shared.recordEarlyTouchDiagnostic($0) }
     static let defaultWriteDelayed: (String) -> Void = {
-        KeyboardSettings.shared.recordEarlyTouchDelayedDiagnostic($0)
+        KeyboardSettings.shared.recordEarlyTouchDelayedDiagnostic(
+            $0, since: EarlyTouchDiagnostics.since, misses: EarlyTouchDiagnostics.counts.swiftUIFirstLower)
+    }
+    /// 지연 기록을 이번 실행으로 바꿔도 되나 — 저장된 기록의 (시작 시각, 아래쪽 놓침 수).
+    static var storedDelayedRecord: () -> (since: Date, misses: Int)? = defaultStoredDelayedRecord
+    static let defaultStoredDelayedRecord: () -> (since: Date, misses: Int)? = {
+        KeyboardSettings.shared.earlyTouchDelayedRecordMeta
+    }
+    /// 저장된 지연 기록이 이보다 오래되면 덜 심한 실행도 덮는다 — 한 번의 큰 지연이 영영 남지 않게.
+    static let delayedRecordMaxAge: TimeInterval = 3 * 24 * 60 * 60
+
+    /// 지연 기록(「마지막 지연 기록」)을 이번 실행으로 바꿀지. 예전엔 놓침 1번짜리 실행도
+    /// 47번짜리 기록을 덮었다(2026-11-27 리포트) — 같은 실행 · 더 많이(같게) 놓침 · 3일 지난 기록일 때만.
+    static func shouldReplaceDelayedRecord(stored: (since: Date, misses: Int)?, since: Date,
+                                           misses: Int, now: Date) -> Bool {
+        guard let stored else { return true }
+        if abs(stored.since.timeIntervalSince(since)) < 1 { return true }
+        if misses >= stored.misses { return true }
+        return now.timeIntervalSince(stored.since) > delayedRecordMaxAge
     }
 
     private(set) static var counts = Counts()
@@ -206,6 +232,8 @@ enum EarlyTouchDiagnostics {
         /// 호스팅 뷰 좌표 — `keyboardPreview` 와 y 원점이 같다.
         let y: CGFloat
         let foundPreviewFrame: CGRect?
+        /// 그 자리를 담은 등록 키가 둘 이상이었나 (`Lookup.containing > 1`).
+        let overlapped: Bool
     }
     private static var recent: [TouchRecord] = []
     private static let recentLimit = 8
@@ -223,7 +251,8 @@ enum EarlyTouchDiagnostics {
                            lookup: EarlyTouchRegistry.Lookup) {
         guard isRecording, height > 0 else { return }
         recent.append(TouchRecord(uptime: timestamp, y: location.y,
-                                  foundPreviewFrame: lookup.target?.previewFrame))
+                                  foundPreviewFrame: lookup.target?.previewFrame,
+                                  overlapped: lookup.containing > 1))
         if recent.count > recentLimit { recent.removeFirst(recent.count - recentLimit) }
 
         guard location.y / height >= lowerRatio else { return }
@@ -252,7 +281,12 @@ enum EarlyTouchDiagnostics {
         let match = matchingTouch(y: point.y, within: 1.5)
         if let match {
             if let frame = match.foundPreviewFrame {
-                if frame.contains(point) { counts.lowerSameKey += 1 } else { counts.lowerOtherKey += 1 }
+                if frame.contains(point) {
+                    counts.lowerSameKey += 1
+                    if match.overlapped { counts.lowerSameKeyOverlapped += 1 }
+                } else {
+                    counts.lowerOtherKey += 1
+                }
             } else {
                 counts.lowerMissed += 1
             }
@@ -260,6 +294,11 @@ enum EarlyTouchDiagnostics {
             counts.lowerNotSeen += 1
         }
         let latencyMs: Double? = match.map { record in (uptime() - record.uptime) * 1000 }
+        if let latencyMs {
+            if latencyMs < 150 { counts.lateUnder150 += 1 }
+            else if latencyMs <= 500 { counts.late150to500 += 1 }
+            else { counts.lateOver500 += 1 }
+        }
         counts.lastLower = Late(at: now(), ms: latencyMs, y: point.y, height: keyboardHeight)
         schedule { flush(force: true) }
     }
@@ -290,7 +329,11 @@ enum EarlyTouchDiagnostics {
         lastWrite = t
         let text = line()
         write(text)
-        if counts.swiftUIFirstLower > 0 { writeDelayed(text) }
+        if counts.swiftUIFirstLower > 0,
+           shouldReplaceDelayedRecord(stored: storedDelayedRecord(), since: since,
+                                      misses: counts.swiftUIFirstLower, now: t) {
+            writeDelayed(text)
+        }
     }
 
     static func line() -> String {
@@ -306,6 +349,9 @@ enum EarlyTouchDiagnostics {
         parts.append("SwiftUI 먼저 \(c.swiftUIFirst) (아래쪽 \(c.swiftUIFirstLower): 터치 못 받음 \(c.lowerNotSeen), 키 못 찾음 \(c.lowerMissed), 다른 키 \(c.lowerOtherKey), 같은 키 \(c.lowerSameKey))")
         parts.append("아래쪽 롱키 팝업 최대 \(popupMax) 마지막 \(popupLast)")
         parts.append("이미 눌림 \(c.alreadyPressed)")
+        if c.swiftUIFirstLower > 0 {
+            parts.append("아래쪽 놓침 늦음 150ms 아래 \(c.lateUnder150), 150~500ms \(c.late150to500), 500ms 넘음 \(c.lateOver500), 같은 키 중 겹침 \(c.lowerSameKeyOverlapped)")
+        }
         if let l = c.lastLower {
             parts.append(String(format: "마지막 SwiftUI 먼저 %@ 터치부터 %@ y %.0f/%.0fpt",
                                 formatter.string(from: l.at), l.ms.map(ms) ?? "?", l.y, l.height))
@@ -330,6 +376,7 @@ enum EarlyTouchDiagnostics {
         uptime = { ProcessInfo.processInfo.systemUptime }
         write = defaultWrite
         writeDelayed = defaultWriteDelayed
+        storedDelayedRecord = { nil }
         schedule = { DispatchQueue.main.async(execute: $0) }
         keyboardHeight = 0
         counts = Counts()
