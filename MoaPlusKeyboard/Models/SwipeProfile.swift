@@ -13,6 +13,10 @@ enum SwipeMode: String, Codable, CaseIterable {
     case sixWayRight
     /// 6방향 60° 균등, 좌우 거울상. ↖ㅣ ↘ㅡ 만 남기고 ↗ ↙ 를 끈다.
     case sixWayLeft
+    /// 6방향 (↖ㅗ ↘ㅜ) — 새모아 2026-11-28 사용자 결정. 구역은 `sixWayRight` 그대로에
+    /// 프리셋 회전 15°(`presetRotation`)를 더해 ㅏ 330~30 · ㅣ 30~90 · ㅗ 90~150 · ㅓ 150~210 ·
+    /// ㅡ 210~270 · ㅜ 270~330. 섹터 중심을 45° 격자 밖으로 옮기면 분류기 STEP1/2 가 깨지므로 회전으로 만든다.
+    case sixWayRightTilted
 }
 
 /// Swipe length threshold
@@ -189,7 +193,15 @@ struct SwipeProfile: Codable, Equatable {
     /// 인식기와 긋기 실시간 테스트는 열별 회전까지 더한
     /// `GestureSettings.recognizerRotationOffset(forColumn:)` 로, 열별 보정 미리보기는
     /// 편집 중인 열 회전에 이 값을 더해 읽는다 — 그래야 그림과 판정이 어긋나지 않는다.
-    var effectiveAxisRotation: Double { fourWayMode ? 0 : axisRotation }
+    ///
+    /// 프리셋에 붙은 회전(`presetRotation`, 6방향 ↖ㅗ ↘ㅜ = 15°)도 여기서 더한다 — 인식기 · 첫 획 다시 읽기 ·
+    /// 구역 보기 · 앱 원그림이 모두 이 값을 거치므로 한 곳이면 된다. 저장값 `axisRotation` 은 사용자 몫만 든다.
+    var effectiveAxisRotation: Double { fourWayMode ? 0 : axisRotation + Self.presetRotation(for: mode) }
+
+    /// 프리셋이 섹터 배치와 함께 정하는 회전(도, 수학 방향 — 양수 = 시계 반대).
+    static func presetRotation(for mode: SwipeMode) -> Double {
+        mode == .sixWayRightTilted ? 15 : 0
+    }
 
     /// When `true` (default), an angle that no sector claims (a gap opened by
     /// per-side narrowing) is recognised as the nearest-center direction —
@@ -236,6 +248,7 @@ extension SwipeProfile {
         case .both:        return DirectionSector.defaultSectors
         case .sixWayRight: return DirectionSector.sixWayRightSectors
         case .sixWayLeft:  return DirectionSector.sixWayLeftSectors
+        case .sixWayRightTilted: return DirectionSector.sixWayRightSectors
         case .custom:      return nil
         }
     }
@@ -246,14 +259,20 @@ extension SwipeProfile {
     /// 한 쌍의 매핑**도 ㅣ/ㅡ 로 맞춘다. 대각선을 ㅗ/ㅜ 로 바꿔 둔 사용자(메일 제보
     /// 스크린샷: ↖ㅗ ↘ㅜ)가 왼손형을 고르면 60° 섹터가 통째로 ㅗ 가 되고 ㅣ 가
     /// 사라지기 때문이다. 폭 0 으로 끈 쪽의 매핑은 건드리지 않는다.
+    ///
+    /// `.custom` 으로 바꿀 때(피커 「직접 설정」 · 각도 편집기에서 손댐)는 지금 프리셋의 회전을 저장값
+    /// `axisRotation` 에 옮겨 담는다 — 안 그러면 6방향 (↖ㅗ ↘ㅜ) 에서 폭 하나만 만져도 구역 전체가 15° 돌아간다.
     func applyingPreset(_ mode: SwipeMode) -> SwipeProfile {
         var copy = self
+        if mode == .custom {
+            copy.axisRotation += Self.presetRotation(for: self.mode)
+        }
         copy.mode = mode
         if let sectors = Self.presetSectors(for: mode) {
             copy.sectors = sectors
         }
         switch mode {
-        case .sixWayRight:
+        case .sixWayRight, .sixWayRightTilted:
             copy.upRightMapping = .vowelI
             copy.downLeftMapping = .vowelEu
         case .sixWayLeft:
@@ -364,13 +383,18 @@ extension Array where Element == DirectionSector {
     ///
     /// Shared by the recogniser and every settings pie chart so the visual and
     /// the actual recognition can never drift apart.
+    ///
+    /// 폭 0 인 대각선(6방향 프리셋이 끈 쪽)은 넓히지 않는다 — 새모아 2026-11-28. 분석기는 인접 카디널이 먼저
+    /// 가져가 어차피 그 대각선을 내지 않는데(`SixWaySectorTests`), 넓혀 두면 구역 보기 · 앱 원그림이 그 자리에
+    /// 없는 「ㅣ」 조각을 그렸다(6방향 ↖ㅗ ↘ㅜ 에서는 ㅗ 구역 한가운데).
     func applyingDiagonalDeltas(iDelta: Double, euDelta: Double) -> [DirectionSector] {
         var copy = self
-        for idx in [1, 3] where idx < copy.count {
+        func isOff(_ idx: Int) -> Bool { self[idx].leftHalfWidth + self[idx].rightHalfWidth <= 0 }
+        for idx in [1, 3] where idx < copy.count && !isOff(idx) {
             copy[idx].leftHalfWidth += iDelta
             copy[idx].rightHalfWidth += iDelta
         }
-        for idx in [5, 7] where idx < copy.count {
+        for idx in [5, 7] where idx < copy.count && !isOff(idx) {
             copy[idx].leftHalfWidth += euDelta
             copy[idx].rightHalfWidth += euDelta
         }

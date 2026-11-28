@@ -115,6 +115,7 @@ struct GestureSettingsView: View {
                     Text("양손용").tag(SwipeMode.both)
                     Text("6방향 (↗ㅣ ↙ㅡ)").tag(SwipeMode.sixWayRight)
                     Text("6방향 (↖ㅣ ↘ㅡ)").tag(SwipeMode.sixWayLeft)
+                    Text("6방향 (↖ㅗ ↘ㅜ)").tag(SwipeMode.sixWayRightTilted)
                     Text("직접 설정").tag(SwipeMode.custom)
                 }
                 .pickerStyle(.inline)
@@ -267,6 +268,7 @@ struct GestureSettingsView: View {
         case .both: return "좌우 균형형 45도 프리셋"
         case .sixWayRight: return "6방향 60° 균등 배치. ↗는 ㅣ, ↙는 ㅡ로 입력하고 ↖·↘는 쓰지 않아 방향마다 인식 범위가 넓어집니다. 복합모음 조합은 그대로입니다."
         case .sixWayLeft: return "6방향 60° 균등 배치. ↖는 ㅣ, ↘는 ㅡ로 입력하고 ↗·↙는 쓰지 않아 방향마다 인식 범위가 넓어집니다. 복합모음 조합은 그대로입니다."
+        case .sixWayRightTilted: return "6방향 60° 균등 배치를 15° 돌린 것. ↖는 ㅗ, ↗는 ㅣ, ←는 ㅓ, →는 ㅏ, ↙는 ㅡ, ↘는 ㅜ입니다. 복합모음 조합은 그대로입니다(ㅘ ↖→ · ㅝ ↘←)."
         case .custom: return "세부 각도를 직접 조정합니다"
         }
     }

@@ -653,7 +653,9 @@ struct SectorAngleHybridView: View {
         } header: {
             Text("전체 회전")
         } footer: {
-            Text("키별 회전 보정과 별개로 전체 인식 축을 돌립니다.")
+            Text(SwipeProfile.presetRotation(for: profile.mode) != 0
+                 ? "키별 회전 보정과 별개로 전체 인식 축을 돌립니다. 이 프리셋은 따로 \(Int(SwipeProfile.presetRotation(for: profile.mode)))° 를 더 돌려 둔 것이라, 여기서는 그 위에 더할 만큼만 고르세요."
+                 : "키별 회전 보정과 별개로 전체 인식 축을 돌립니다.")
         }
         .disabled(isFourWay)
         .opacity(isFourWay ? 0.4 : 1)
@@ -680,7 +682,7 @@ struct SectorAngleHybridView: View {
             Button("이 방향 초기화") {
                 var gs = settings.gestureSettings
                 gs.swipeProfile.sectors[selectedIndex].halfWidth = Self.defaultHalfWidth
-                gs.swipeProfile.mode = .custom
+                gs.swipeProfile = gs.swipeProfile.applyingPreset(.custom)   // 프리셋 회전을 저장값으로 옮김
                 settings.gestureSettings = gs
             }
             .disabled(isFourWay)
@@ -746,8 +748,8 @@ struct SectorAngleHybridView: View {
                 } else {
                     gs.swipeProfile.sectors[selectedIndex].rightHalfWidth = newValue
                 }
-                // 손으로 폭을 바꾸면 더 이상 프리셋 배치가 아니다.
-                gs.swipeProfile.mode = .custom
+                // 손으로 폭을 바꾸면 더 이상 프리셋 배치가 아니다(프리셋 회전은 저장값으로 옮김).
+                gs.swipeProfile = gs.swipeProfile.applyingPreset(.custom)
                 settings.gestureSettings = gs
             }
         )

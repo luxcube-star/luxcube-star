@@ -691,6 +691,11 @@ KeyboardSettings (싱글톤, App Group UserDefaults, ObservableObject)
 45°/15° 비대칭, 끈 대각선 폭 0. 살아 있는 대각선 쌍의 매핑은 ㅣ/ㅡ 로 강제(끈 쪽은 유지). 카디널 `halfWidth` 는 22.5 로 둘 것(STEP1 이 넓힌 쪽 판별에 씀).
 프리셋 피커는 `SwipeProfile.applyingPreset` 로 **섹터까지** 쓴다(v2.2.2 까지 오른손/왼손은 라벨만
 바뀌고 미적용이었다). 각도 편집기에서 손대면 `.custom`. 가드 `SixWaySectorTests`
+**6방향 (↖ㅗ ↘ㅜ)** (`.sixWayRightTilted`, 새모아 2026-11-28 사용자 결정): 섹터는 오른손형 그대로 + 프리셋 회전 15°
+(`SwipeProfile.presetRotation`) — `effectiveAxisRotation` 한 곳에서 더하므로 인식기 · 첫 획 다시 읽기 · 구역 보기 · 앱 원그림이 같다.
+저장값 `axisRotation` 은 사용자 몫만. `.custom` 으로 바꿀 때(`applyingPreset(.custom)` — 편집기도 이것을 부름) 프리셋 회전을 저장값으로 옮긴다.
+섹터 중심을 45° 격자 밖으로 옮겨 만들지 말 것(분류기 STEP1/2). 줄 보정 폭(`applyingDiagonalDeltas`)은 **폭 0 대각선을 넓히지 않는다** —
+분석기는 원래 안 내지만 그림이 없는 ㅣ 조각을 그렸다
 
 **"비활성" 매핑 (이슈 #42)**: 끈 대각선은 **단독 획으로 모음을 만들지 않는다**. 그 대각선으로
 시작하는 멀티 스트로크(↘↖=ㅢ, ↙↗=ㅢ, ↘↑=ㅢ)는 그대로 성립한다.
@@ -900,6 +905,8 @@ v2.2.5 까지 ↗/↘ 를 꺼도 ㅣ/ㅡ 가 들어갔다 — `normalizedDirecti
 - 구역 식 `VowelZoneGeometry.zones` 는 분석기(`effectiveSectors` + `recognizerRotationOffset` + 버릇 각도)와 같다 — 앱 `DirectionPieChart.keySlices`
   와도 같은 식. 한쪽을 바꾸면 같이 바꿀 것 (`VowelZoneGeometryTests` 가 그린 구역 가운데로 그어 분석기 판정과 맞춰 본다).
   ㅣ 는 `.vowelI` 로 매핑된 대각선만, 폭 0(6방향 프리셋의 끈 쪽)은 뺀다. 4방향 전용은 90° 칸의 ㅜ · ㅓ 만
+- 부채꼴은 **도형(`VowelZoneSector` Shape)으로 칠한다 — Canvas 쓰지 말 것**: 아이패드 미니 키보드(iPadOS 27.2.1, 2026-11-28)에서 Canvas 칠하기만
+  안 그려지고 같은 뷰의 글자는 그려졌다(사진 판독, 까닭 모름 · 아이폰 키보드 · 앱 미리보기는 그려짐)
 - 크기 `vowelZoneRadiusScale`(반지름 = 키 폭 × 1~3칸, 0.5칸씩, 기본 2칸 — 사용자 결정 2026-11-27 1다, 처음 1칸 고정은 손가락에 가려 작다는 제보).
   그림은 키보드 뷰 밖으로 못 나가 맨 윗줄은 위쪽이 잘린다
 - **진단 (2026-11-28)**: 실기기에서 앱 스위치는 켜짐인데 키보드가 꺼짐을 들고 있어 모든 자음에서 구역이 안 떴다(앱에서 껐다 켜니 돌아옴 · 다른 키보드 갔다 와도 그대로).

@@ -42,6 +42,29 @@ final class VowelZoneGeometryTests: XCTestCase {
         }
     }
 
+    /// 6방향 (↖ㅗ ↘ㅜ, 새모아 2026-11-28): 프리셋 회전 15° 가 구역 그림에도 들어가야 한다 — ㅜ 구역 가운데 ≈ 300°.
+    func test_sixWayRightTilted_zonesFollowPresetRotation() {
+        var settings = GestureSettings()
+        settings.swipeProfile = settings.swipeProfile.applyingPreset(.sixWayRightTilted)
+        for column in 1...5 {
+            let zones = VowelZoneGeometry.zones(settings: settings,
+                                                info: VowelZoneInfo(columnId: column, habitRotation: 0))
+            XCTAssertEqual(zones.map(\.vowel).sorted(), ["ㅓ", "ㅜ", "ㅣ"], "열 \(column)")
+            for zone in zones {
+                let d = direction(of: zone, settings: settings, column: column, habit: 0)
+                switch zone.vowel {
+                case "ㅓ": XCTAssertEqual(d, .left, "열 \(column)")
+                case "ㅜ":
+                    XCTAssertEqual(d, .down, "열 \(column)")
+                    let mid = (zone.start + zone.end) / 2
+                    let rot = settings.recognizerRotationOffset(forColumn: column)
+                    XCTAssertEqual(mid - rot, 285, accuracy: 0.001, "열 \(column) — 6방향 ↓ 구역 가운데 285° + 회전")
+                default: XCTAssertEqual(d, .upRight, "열 \(column)")
+                }
+            }
+        }
+    }
+
     func test_fourWay_showsOnlyEoAndU() {
         var settings = GestureSettings()
         settings.swipeProfile.fourWayMode = true

@@ -137,23 +137,15 @@ struct VowelZoneOverlayView: View {
 
     var body: some View {
         ZStack {
-            Canvas { context, _ in
-                for zone in zones {
-                    let color = Self.colors[zone.vowel] ?? .gray
-                    var path = Path()
-                    path.move(to: center)
-                    let steps = 24
-                    for step in 0...steps {
-                        let deg = zone.start + (zone.end - zone.start) * Double(step) / Double(steps)
-                        let rad = deg * .pi / 180
-                        // 수학 각도 → 화면: y 를 뒤집는다.
-                        path.addLine(to: CGPoint(x: center.x + radius * CGFloat(cos(rad)),
-                                                 y: center.y - radius * CGFloat(sin(rad))))
-                    }
-                    path.closeSubpath()
-                    context.fill(path, with: .color(color.opacity(0.45)))
-                    context.stroke(path, with: .color(color.opacity(0.9)), lineWidth: 1)
-                }
+            // 부채꼴은 Canvas 가 아니라 도형(Shape)으로 그린다 — 아이패드 미니 키보드(iPadOS 27.2.1)에서
+            // Canvas 칠하기만 안 그려지고 같은 뷰의 글자는 그려졌다(2026-11-28 사진 판독, 까닭 모름).
+            // 키 바탕(RoundedRectangle)과 같은 길이다.
+            ForEach(Array(zones.enumerated()), id: \.offset) { _, zone in
+                let color = Self.colors[zone.vowel] ?? .gray
+                let sector = VowelZoneSector(center: center, radius: radius,
+                                             startDeg: zone.start, endDeg: zone.end)
+                sector.fill(color.opacity(0.45))
+                sector.stroke(color.opacity(0.9), lineWidth: 1)
             }
             ForEach(Array(zones.enumerated()), id: \.offset) { _, zone in
                 let mid = (zone.start + zone.end) / 2 * .pi / 180
@@ -165,5 +157,27 @@ struct VowelZoneOverlayView: View {
             }
         }
         .allowsHitTesting(false)
+    }
+}
+
+/// 누른 자리를 가운데로 한 부채꼴 하나. 각도는 수학 방향(도) — 화면은 y 를 뒤집는다.
+struct VowelZoneSector: Shape {
+    let center: CGPoint
+    let radius: CGFloat
+    let startDeg: Double
+    let endDeg: Double
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: center)
+        let steps = 24
+        for step in 0...steps {
+            let deg = startDeg + (endDeg - startDeg) * Double(step) / Double(steps)
+            let rad = deg * .pi / 180
+            path.addLine(to: CGPoint(x: center.x + radius * CGFloat(cos(rad)),
+                                     y: center.y - radius * CGFloat(sin(rad))))
+        }
+        path.closeSubpath()
+        return path
     }
 }

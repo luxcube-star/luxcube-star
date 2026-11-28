@@ -54,6 +54,11 @@ final class SixWaySectorTests: XCTestCase {
         let c = sweep(widened)
         XCTAssertNil(c[.upLeft])
         XCTAssertNil(c[.downRight])
+        // 그림(구역 보기 · 앱 원그림)도 같은 배열을 쓴다 — 끈 대각선은 폭 0 그대로, 산 대각선만 넓어짐.
+        XCTAssertEqual(widened[3].leftHalfWidth + widened[3].rightHalfWidth, 0)
+        XCTAssertEqual(widened[7].leftHalfWidth + widened[7].rightHalfWidth, 0)
+        XCTAssertEqual(widened[1].leftHalfWidth, 40)
+        XCTAssertEqual(widened[5].rightHalfWidth, 40)
     }
 
     /// 기본 8방향 배치는 바뀌지 않는다 (회귀 가드).
@@ -193,5 +198,92 @@ final class SixWaySectorTests: XCTestCase {
     func test_e2e_euiThroughRemainingDiagonalPair() {
         XCTAssertEqual(vowel(.sixWayRight, strokes: [stroke(225, 40), stroke(45, 40)]), .ㅢ)
         XCTAssertEqual(vowel(.sixWayLeft, strokes: [stroke(315, 40), stroke(135, 40)]), .ㅢ)
+    }
+
+    // MARK: - 6방향 (↖ㅗ ↘ㅜ) — 새모아 2026-11-28
+
+    /// 수학 각도(도) → 기대 모음. ㅏ 330~30 · ㅣ 30~90 · ㅗ 90~150 · ㅓ 150~210 · ㅡ 210~270 · ㅜ 270~330.
+    private func tiltedExpected(_ deg: Double) -> GestureDirection {
+        switch deg {
+        case 30..<90: return .upRight
+        case 90..<150: return .up
+        case 150..<210: return .left
+        case 210..<270: return .downLeft
+        case 270..<330: return .down
+        default: return .right
+        }
+    }
+
+    /// 1° 간격 전수: 구역이 60° 씩, 15° 돌아간 자리에 있어야 한다. 회전은 `effectiveAxisRotation` 한 곳에서 온다.
+    func test_sixWayRightTilted_tilesSixSectorsRotatedFifteen() {
+        let profile = SwipeProfile.bothHands.applyingPreset(.sixWayRightTilted)
+        XCTAssertEqual(profile.sectors, DirectionSector.sixWayRightSectors)
+        XCTAssertEqual(profile.axisRotation, 0, "저장값은 사용자 몫만")
+        XCTAssertEqual(profile.effectiveAxisRotation, 15)
+        for fillGap in [true, false] {
+            for k in 0..<360 {
+                let deg = Double(k) + 0.25
+                let rad = deg * .pi / 180
+                let v = CGVector(dx: cos(rad) * 100, dy: -sin(rad) * 100)
+                let d = GestureDirection.from(vector: v, sectors: profile.sectors,
+                                              rotationOffset: profile.effectiveAxisRotation,
+                                              threshold: 1, fillGap: fillGap)
+                XCTAssertEqual(d, tiltedExpected(deg), "\(deg)° (fillGap=\(fillGap))")
+            }
+        }
+    }
+
+    func test_sixWayRightTilted_rotationRules() {
+        var p = SwipeProfile.bothHands
+        p.axisRotation = 3
+        let tilted = p.applyingPreset(.sixWayRightTilted)
+        XCTAssertEqual(tilted.effectiveAxisRotation, 18, "사용자 회전 위에 더함")
+        XCTAssertEqual(tilted.upRightMapping, .vowelI)
+        XCTAssertEqual(tilted.downLeftMapping, .vowelEu)
+
+        var four = tilted
+        four.fourWayMode = true
+        XCTAssertEqual(four.effectiveAxisRotation, 0, "4방향 전용이면 회전 없음")
+
+        // 다른 프리셋으로 가면 프리셋 회전은 사라지고 사용자 몫만 남는다.
+        XCTAssertEqual(tilted.applyingPreset(.both).effectiveAxisRotation, 3)
+        XCTAssertEqual(tilted.applyingPreset(.sixWayRight).effectiveAxisRotation, 3)
+
+        // 직접 설정으로 가면 프리셋 회전을 저장값으로 옮겨 구역이 그대로다.
+        let custom = tilted.applyingPreset(.custom)
+        XCTAssertEqual(custom.mode, .custom)
+        XCTAssertEqual(custom.axisRotation, 18)
+        XCTAssertEqual(custom.effectiveAxisRotation, 18)
+        XCTAssertEqual(custom.sectors, DirectionSector.sixWayRightSectors)
+        // 이미 직접 설정이면 두 번 더하지 않는다.
+        XCTAssertEqual(custom.applyingPreset(.custom).axisRotation, 18)
+    }
+
+    func test_sixWayRightTilted_roundTripsThroughJSON() throws {
+        let p = SwipeProfile.bothHands.applyingPreset(.sixWayRightTilted)
+        let decoded = try JSONDecoder().decode(SwipeProfile.self, from: JSONEncoder().encode(p))
+        XCTAssertEqual(decoded, p)
+        XCTAssertEqual(decoded.effectiveAxisRotation, 15)
+    }
+
+    /// 분석기 + 리졸버: 한 획 여섯 방향과 겹모음(지금 규칙 그대로 — ㅘ ↖→ · ㅝ ↘← · ㅚ ↖↘ · ㅟ ↘↖ · ㅛ ↖↘↖ · ㅠ ↘↖↘ · ㅢ ↙↗).
+    func test_e2e_sixWayRightTilted_singleAndCompound() {
+        let m = SwipeMode.sixWayRightTilted
+        XCTAssertEqual(vowel(m, strokes: [stroke(0)]), .ㅏ)
+        XCTAssertEqual(vowel(m, strokes: [stroke(60)]), .ㅣ)
+        XCTAssertEqual(vowel(m, strokes: [stroke(120)]), .ㅗ, "↖ = ㅗ")
+        XCTAssertEqual(vowel(m, strokes: [stroke(180)]), .ㅓ)
+        XCTAssertEqual(vowel(m, strokes: [stroke(240)]), .ㅡ)
+        XCTAssertEqual(vowel(m, strokes: [stroke(300)]), .ㅜ, "↘ = ㅜ")
+
+        XCTAssertEqual(vowel(m, strokes: [stroke(120, 40), stroke(0, 40)]), .ㅘ, "↖→")
+        XCTAssertEqual(vowel(m, strokes: [stroke(300, 40), stroke(180, 40)]), .ㅝ, "↘←")
+        XCTAssertEqual(vowel(m, strokes: [stroke(120, 40), stroke(300, 40)]), .ㅚ, "↖↘")
+        XCTAssertEqual(vowel(m, strokes: [stroke(300, 40), stroke(120, 40)]), .ㅟ, "↘↖")
+        XCTAssertEqual(vowel(m, strokes: [stroke(120, 40), stroke(300, 40), stroke(120, 40)]), .ㅛ, "↖↘↖")
+        XCTAssertEqual(vowel(m, strokes: [stroke(300, 40), stroke(120, 40), stroke(300, 40)]), .ㅠ, "↘↖↘")
+        XCTAssertEqual(vowel(m, strokes: [stroke(0, 40), stroke(180, 40)]), .ㅐ, "→←")
+        XCTAssertEqual(vowel(m, strokes: [stroke(180, 40), stroke(0, 40)]), .ㅔ, "←→")
+        XCTAssertEqual(vowel(m, strokes: [stroke(240, 40), stroke(60, 40)]), .ㅢ, "↙↗")
     }
 }
