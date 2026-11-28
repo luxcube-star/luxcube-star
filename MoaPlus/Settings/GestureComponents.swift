@@ -682,7 +682,7 @@ struct SectorAngleHybridView: View {
             Button("이 방향 초기화") {
                 var gs = settings.gestureSettings
                 gs.swipeProfile.sectors[selectedIndex].halfWidth = Self.defaultHalfWidth
-                gs.swipeProfile = gs.swipeProfile.applyingPreset(.custom)   // 프리셋 회전을 저장값으로 옮김
+                gs.swipeProfile = gs.swipeProfile.convertingToCustom()   // 프리셋 회전을 저장값으로 옮김
                 settings.gestureSettings = gs
             }
             .disabled(isFourWay)
@@ -692,6 +692,7 @@ struct SectorAngleHybridView: View {
                 gs.swipeProfile.sectors = DirectionSector.defaultSectors
                 gs.swipeProfile.mode = .both
                 gs.swipeProfile.axisRotation = 0
+                gs.swipeProfile.savedCustomSectors = nil   // 「처음으로」 — 보관한 직접 설정 각도도 지움
                 settings.gestureSettings = gs
             }
             .foregroundColor(.red)
@@ -749,7 +750,7 @@ struct SectorAngleHybridView: View {
                     gs.swipeProfile.sectors[selectedIndex].rightHalfWidth = newValue
                 }
                 // 손으로 폭을 바꾸면 더 이상 프리셋 배치가 아니다(프리셋 회전은 저장값으로 옮김).
-                gs.swipeProfile = gs.swipeProfile.applyingPreset(.custom)
+                gs.swipeProfile = gs.swipeProfile.convertingToCustom()
                 settings.gestureSettings = gs
             }
         )

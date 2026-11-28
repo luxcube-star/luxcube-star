@@ -693,7 +693,10 @@ KeyboardSettings (싱글톤, App Group UserDefaults, ObservableObject)
 바뀌고 미적용이었다). 각도 편집기에서 손대면 `.custom`. 가드 `SixWaySectorTests`
 **6방향 (↖ㅗ ↘ㅜ)** (`.sixWayRightTilted`, 새모아 2026-11-28 사용자 결정): 섹터는 오른손형 그대로 + 프리셋 회전 15°
 (`SwipeProfile.presetRotation`) — `effectiveAxisRotation` 한 곳에서 더하므로 인식기 · 첫 획 다시 읽기 · 구역 보기 · 앱 원그림이 같다.
-저장값 `axisRotation` 은 사용자 몫만. `.custom` 으로 바꿀 때(`applyingPreset(.custom)` — 편집기도 이것을 부름) 프리셋 회전을 저장값으로 옮긴다.
+저장값 `axisRotation` 은 사용자 몫만. 지금 각도를 직접 설정으로 이어받을 때(`convertingToCustom` — 각도 편집기) 프리셋 회전을 저장값으로 옮긴다.
+**직접 설정 기억하기** (새모아 2026-11-28 사용자 「나」): 직접 설정 → 프리셋으로 갈 때 각도를 `savedCustomSectors` 에 보관, 목록에서
+「직접 설정」을 다시 고르면(`applyingPreset(.custom)`) 그 각도로 되살림(회전은 더하지 않음 · 보관 없으면 `convertingToCustom`). 편집기에서
+손대면 보관을 버림(편집기는 `applyingPreset(.custom)` 을 부르면 안 됨 — 고친 각도 대신 예전 각도가 돌아온다) · 전체 초기화도 버림
 섹터 중심을 45° 격자 밖으로 옮겨 만들지 말 것(분류기 STEP1/2). 줄 보정 폭(`applyingDiagonalDeltas`)은 **폭 0 대각선을 넓히지 않는다** —
 분석기는 원래 안 내지만 그림이 없는 ㅣ 조각을 그렸다
 

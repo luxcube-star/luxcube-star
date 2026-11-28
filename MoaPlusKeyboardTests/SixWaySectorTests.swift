@@ -286,4 +286,68 @@ final class SixWaySectorTests: XCTestCase {
         XCTAssertEqual(vowel(m, strokes: [stroke(180, 40), stroke(0, 40)]), .ㅔ, "←→")
         XCTAssertEqual(vowel(m, strokes: [stroke(240, 40), stroke(60, 40)]), .ㅢ, "↙↗")
     }
+
+    // MARK: - 직접 설정 기억하기 — 새모아 2026-11-28 사용자 「나」
+
+    private var myCustomSectors: [DirectionSector] {
+        var s = DirectionSector.defaultSectors
+        s[1].leftHalfWidth = 33; s[1].rightHalfWidth = 12   // ↗ 비대칭
+        s[6].leftHalfWidth = 30                              // ↓ 넓힘
+        return s
+    }
+
+    /// 직접 설정 → 프리셋 → 목록에서 「직접 설정」 = 예전 각도로 되살림 (프리셋 회전은 옮기지 않음).
+    func test_customSectors_restoredAfterPresetRoundTrip() {
+        var p = SwipeProfile.bothHands
+        p.mode = .custom
+        p.sectors = myCustomSectors
+        p.axisRotation = 4
+
+        let tilted = p.applyingPreset(.sixWayRightTilted)
+        XCTAssertEqual(tilted.sectors, DirectionSector.sixWayRightSectors)
+        XCTAssertEqual(tilted.savedCustomSectors, myCustomSectors, "떠날 때 보관")
+        // 프리셋끼리 오가도 보관은 남는다.
+        let other = tilted.applyingPreset(.both).applyingPreset(.sixWayLeft)
+        XCTAssertEqual(other.savedCustomSectors, myCustomSectors)
+
+        let back = other.applyingPreset(.custom)
+        XCTAssertEqual(back.mode, .custom)
+        XCTAssertEqual(back.sectors, myCustomSectors, "예전 직접 설정 각도로")
+        XCTAssertEqual(back.axisRotation, 4, "프리셋 회전을 더하지 않음")
+        XCTAssertNil(back.savedCustomSectors)
+        XCTAssertEqual(tilted.applyingPreset(.custom).axisRotation, 4)
+    }
+
+    /// 프리셋 상태에서 편집기로 손대면 그 각도가 새 직접 설정 — 보관한 예전 각도는 버린다.
+    func test_editingPreset_becomesNewCustom_andDropsSaved() {
+        var p = SwipeProfile.bothHands
+        p.mode = .custom
+        p.sectors = myCustomSectors
+        var tilted = p.applyingPreset(.sixWayRightTilted)
+        tilted.sectors[0].leftHalfWidth = 20   // 편집기에서 → 폭을 만짐
+        let edited = tilted.convertingToCustom()
+        XCTAssertEqual(edited.mode, .custom)
+        XCTAssertEqual(edited.sectors[0].leftHalfWidth, 20)
+        XCTAssertEqual(edited.axisRotation, 15, "프리셋 회전을 저장값으로")
+        XCTAssertNil(edited.savedCustomSectors)
+        // 이미 직접 설정이면 아무것도 바꾸지 않는다.
+        XCTAssertEqual(edited.convertingToCustom(), edited)
+        XCTAssertEqual(edited.applyingPreset(.custom), edited)
+    }
+
+    func test_savedCustomSectors_roundTripsAndOldJSONDecodes() throws {
+        var p = SwipeProfile.bothHands
+        p.mode = .custom
+        p.sectors = myCustomSectors
+        let preset = p.applyingPreset(.sixWayRight)
+        let decoded = try JSONDecoder().decode(SwipeProfile.self, from: JSONEncoder().encode(preset))
+        XCTAssertEqual(decoded, preset)
+        XCTAssertEqual(decoded.savedCustomSectors, myCustomSectors)
+
+        // 이 칸이 없던 예전 판 파일
+        let old = #"{"mode":"custom","swipeLength":"short","axisRotation":2}"#.data(using: .utf8)!
+        let oldDecoded = try JSONDecoder().decode(SwipeProfile.self, from: old)
+        XCTAssertNil(oldDecoded.savedCustomSectors)
+        XCTAssertEqual(oldDecoded.axisRotation, 2)
+    }
 }

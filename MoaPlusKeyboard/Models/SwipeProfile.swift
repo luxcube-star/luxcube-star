@@ -211,6 +211,11 @@ struct SwipeProfile: Codable, Equatable {
     /// zone. Default `true` keeps the dead-zone-free behaviour.
     var gapFillNearest: Bool = true
 
+    /// 「직접 설정」에서 프리셋으로 바꿀 때 보관한 방향별 각도 (새모아 2026-11-28 사용자 결정 「나」).
+    /// 프리셋 목록에서 「직접 설정」을 다시 고르면 이것으로 되살린다. 편집기에서 손대 새 직접 설정이 되거나
+    /// 전체 초기화하면 버린다. 매핑 · 길이 · 회전 · 4방향은 원래 프리셋과 무관하게 남으므로 각도만 보관한다.
+    var savedCustomSectors: [DirectionSector]? = nil
+
     /// Predefined profiles
     static let bothHands = SwipeProfile(mode: .both)
 
@@ -260,12 +265,24 @@ extension SwipeProfile {
     /// 스크린샷: ↖ㅗ ↘ㅜ)가 왼손형을 고르면 60° 섹터가 통째로 ㅗ 가 되고 ㅣ 가
     /// 사라지기 때문이다. 폭 0 으로 끈 쪽의 매핑은 건드리지 않는다.
     ///
-    /// `.custom` 으로 바꿀 때(피커 「직접 설정」 · 각도 편집기에서 손댐)는 지금 프리셋의 회전을 저장값
-    /// `axisRotation` 에 옮겨 담는다 — 안 그러면 6방향 (↖ㅗ ↘ㅜ) 에서 폭 하나만 만져도 구역 전체가 15° 돌아간다.
+    /// 프리셋 목록에서 고를 때 쓴다. 「직접 설정」에서 프리셋으로 가면 그때 각도를 `savedCustomSectors` 에
+    /// 보관하고, 다시 「직접 설정」을 고르면 보관한 각도로 되살린다. 보관한 것이 없으면 지금 각도를 그대로
+    /// 직접 설정으로 이어받는다(`convertingToCustom` — 프리셋 회전은 저장값으로 옮김).
     func applyingPreset(_ mode: SwipeMode) -> SwipeProfile {
-        var copy = self
         if mode == .custom {
-            copy.axisRotation += Self.presetRotation(for: self.mode)
+            guard self.mode != .custom else { return self }
+            if let saved = savedCustomSectors {
+                var restored = self
+                restored.mode = .custom
+                restored.sectors = saved
+                restored.savedCustomSectors = nil
+                return restored
+            }
+            return convertingToCustom()
+        }
+        var copy = self
+        if self.mode == .custom {
+            copy.savedCustomSectors = self.sectors
         }
         copy.mode = mode
         if let sectors = Self.presetSectors(for: mode) {
@@ -283,6 +300,19 @@ extension SwipeProfile {
         }
         return copy
     }
+
+    /// 지금 각도를 그대로 「직접 설정」으로 — 각도 편집기에서 손댈 때. 지금 프리셋의 회전은 저장값
+    /// `axisRotation` 에 옮겨 담는다(안 그러면 6방향 ↖ㅗ ↘ㅜ 에서 폭 하나만 만져도 구역 전체가 15° 돌아간다).
+    /// 이 각도가 새 직접 설정이 되므로 보관해 둔 예전 직접 설정은 버린다.
+    func convertingToCustom() -> SwipeProfile {
+        var copy = self
+        if mode != .custom {
+            copy.axisRotation += Self.presetRotation(for: mode)
+        }
+        copy.mode = .custom
+        copy.savedCustomSectors = nil
+        return copy
+    }
 }
 
 // MARK: - Forward-compatible decoding
@@ -298,6 +328,7 @@ extension SwipeProfile {
         case mode, swipeLength, sectors
         case upLeftMapping, upRightMapping, downLeftMapping, downRightMapping
         case fourWayMode, axisRotation, gapFillNearest
+        case savedCustomSectors
     }
 
     init(from decoder: Decoder) throws {
@@ -313,6 +344,7 @@ extension SwipeProfile {
         fourWayMode = try c.decodeIfPresent(Bool.self, forKey: .fourWayMode) ?? false
         axisRotation = try c.decodeIfPresent(Double.self, forKey: .axisRotation) ?? 0
         gapFillNearest = try c.decodeIfPresent(Bool.self, forKey: .gapFillNearest) ?? true
+        savedCustomSectors = try c.decodeIfPresent([DirectionSector].self, forKey: .savedCustomSectors)
     }
 }
 
