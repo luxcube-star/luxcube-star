@@ -52,6 +52,7 @@ final class KeyboardSettings: ObservableObject {
         static let predictionDiagnostic = "predictionDiagnostic"
         static let bracketReturnDiagnostic = "bracketReturnDiagnostic"
         static let textReplacementDiagnostic = "textReplacementDiagnostic"
+        static let vowelZoneDiagnostic = "vowelZoneDiagnostic"
         static let wordSuggestionEnabled = "wordSuggestionEnabled"
         static let fullAccessDiagnostic = "fullAccessDiagnostic"
         static let keyboardMeasuredBottomInset = "keyboardMeasuredBottomInset"
@@ -99,6 +100,22 @@ final class KeyboardSettings: ObservableObject {
 
     /// Guards against redundant saves while loadAll() is assigning values
     private var isLoading = false
+
+    /// 설정을 다시 읽은 계기 — 구역 보기 진단(새모아 2026-11-28 「앱은 켜짐인데 키보드는 꺼짐」) 판독용.
+    enum LoadReason: String {
+        case initial = "처음 켜짐"
+        case keyboardCreated = "키보드 만듦"
+        case keyboardAppeared = "키보드 뜸"
+        case hostReturned = "앱에서 돌아옴"
+        case appChanged = "앱이 바꿨다는 알림"
+        case other = "기타"
+    }
+
+    /// 마지막으로 다시 읽은 때 · 계기 · 그때 읽은 구역 보기 스위치 값. 기록이라 `@Published` 밖.
+    private(set) var lastLoad: (at: Date, reason: LoadReason, vowelZone: Bool)?
+    /// 다른 프로세스가 바꿨다는 알림을 받은 수 · 0.1초 안에 겹쳐 버린 수(자기 알림 메아리는 빼고 셈).
+    private(set) var crossProcessNoticeCount = 0
+    private(set) var crossProcessDroppedCount = 0
 
     // MARK: - Gesture Settings
 
@@ -569,7 +586,7 @@ final class KeyboardSettings: ObservableObject {
             self.isUsingAppGroup = false
             NSLog("⚠️ MoaPlus KeyboardSettings: App Group '%@' unavailable — settings will not sync between host app and keyboard. Reinstall required.", KeyboardSettings.appGroupId)
         }
-        loadAll()
+        loadAll(reason: .initial)
         registerCrossProcessObserver()
     }
 
@@ -608,13 +625,17 @@ final class KeyboardSettings: ObservableObject {
         // hold the latest values, so reloading just rebuilds SwiftUI for
         // nothing and is what caused the in-process memory leak.
         guard now - lastSelfPostAt > 0.05 else { return }
+        crossProcessNoticeCount += 1
         // Coalesce bursts from the other process (settings screens often
         // fire several saves within a frame). Re-loading more than ~10x
         // per second is wasted work and floods @Published subscribers.
-        guard now - lastReloadAt >= 0.1 else { return }
+        guard now - lastReloadAt >= 0.1 else {
+            crossProcessDroppedCount += 1
+            return
+        }
         lastReloadAt = now
         DispatchQueue.main.async { [weak self] in
-            self?.loadAll()
+            self?.loadAll(reason: .appChanged)
         }
     }
 
@@ -650,9 +671,12 @@ final class KeyboardSettings: ObservableObject {
         self[keyPath: keyPath] = newValue
     }
 
-    func loadAll() {
+    func loadAll(reason: LoadReason = .other) {
         isLoading = true
-        defer { isLoading = false }
+        defer {
+            isLoading = false
+            lastLoad = (Date(), reason, showVowelZoneOnPress)
+        }
         assign(\.gestureSettings, load(GestureSettings.self, forKey: Keys.gestureSettings) ?? .default)
         assign(\.themeSettings, load(ThemeSettings.self, forKey: Keys.themeSettings) ?? .default)
         assign(\.secondaryKeyActions, load([SecondaryKeyAction].self, forKey: Keys.secondaryKeyActions) ?? SecondaryKeyAction.defaults)
@@ -839,6 +863,19 @@ final class KeyboardSettings: ObservableObject {
     }
 
     var textReplacementDiagnostic: String? { defaults.string(forKey: Keys.textReplacementDiagnostic) }
+
+    /// 구역 보기 스위치를 저장소에서 **바로** 읽은 값(없으면 nil). 들고 있는 `showVowelZoneOnPress` 와
+    /// 견줘 키보드가 다시 읽기를 놓쳤는지 가른다 (새모아 2026-11-28 진단).
+    func storedShowVowelZoneOnPress() -> Bool? {
+        defaults.object(forKey: Keys.showVowelZoneOnPress) as? Bool
+    }
+
+    /// 구역 보기 진단 줄 (`VowelZoneDiagnostics.line`). 키보드가 적고 앱 개발자 리포트가 읽는다. 글자는 담지 않는다.
+    func recordVowelZoneDiagnostic(_ text: String) {
+        defaults.set(text, forKey: Keys.vowelZoneDiagnostic)
+    }
+
+    var vowelZoneDiagnostic: String? { defaults.string(forKey: Keys.vowelZoneDiagnostic) }
 
     private static func diagnosticStamp() -> String {
         let f = DateFormatter()

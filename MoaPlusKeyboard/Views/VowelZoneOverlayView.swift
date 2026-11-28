@@ -70,6 +70,59 @@ enum VowelZoneGeometry {
     }
 }
 
+/// 구역 보기 진단 (새모아 2026-11-28). 실기기에서 앱 스위치는 켜짐인데 키보드는 꺼짐을 들고 있어 구역이 안 뜨다가,
+/// 앱에서 껐다 켜자 돌아왔다. 키보드가 **들고 있던 값**과 누른 순간 **저장소에서 바로 읽은 값**을 견준다 —
+/// 어긋나면 다시 읽기를 놓친 것, 둘 다 꺼짐이면 저장소가 낡은 값을 준 것. 글자는 담지 않는다.
+struct VowelZoneDiagnostics {
+    let since: Date
+    private(set) var presses = 0
+    private(set) var shown = 0
+    private(set) var mismatches = 0
+    private(set) var lastMismatchAt: Date?
+    private(set) var lastHeld: Bool?
+    /// 마지막 누름 때 저장소 값. 값이 없으면 nil(기본 꺼짐으로 침).
+    private(set) var lastStored: Bool?
+
+    init(since: Date = Date()) { self.since = since }
+
+    /// 한글 자음 키 누름 하나. 어긋났으면 true.
+    @discardableResult
+    mutating func recordPress(held: Bool, stored: Bool?, at date: Date = Date()) -> Bool {
+        presses += 1
+        if held { shown += 1 }
+        lastHeld = held
+        lastStored = stored
+        let mismatch = (stored ?? false) != held
+        if mismatch {
+            mismatches += 1
+            lastMismatchAt = date
+        }
+        return mismatch
+    }
+
+    func line(lastLoad: (at: Date, reason: String, vowelZone: Bool)?, notices: Int, dropped: Int) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "MM/dd HH:mm:ss"
+        let t = DateFormatter()
+        t.dateFormat = "HH:mm:ss"
+        func onOff(_ v: Bool?) -> String { v.map { $0 ? "켜짐" : "꺼짐" } ?? "-" }
+        var parts = ["\(f.string(from: since)) 부터", "자음 누름 \(presses)", "구역 띄움 \(shown)"]
+        // 타입을 단계마다 드러낸다 — 한 식으로 묶으면 CI 컴파일러가 타입 추론 시간 초과(EarlyTouch.swift 와 같은 까닭).
+        let storedText: String = presses == 0 ? "-" : (lastStored == nil ? "없음" : onOff(lastStored))
+        parts.append("마지막 누름 때 키보드 값 \(onOff(lastHeld)) · 저장소 값 \(storedText)")
+        var mismatchText = "어긋남 \(mismatches)"
+        if let lastMismatchAt { mismatchText += " (마지막 \(t.string(from: lastMismatchAt)))" }
+        parts.append(mismatchText)
+        if let lastLoad {
+            parts.append("설정 다시 읽음 \(f.string(from: lastLoad.at)) \(lastLoad.reason) · 그때 읽은 값 \(onOff(lastLoad.vowelZone))")
+        } else {
+            parts.append("설정 다시 읽음 -")
+        }
+        parts.append("앱 알림 받음 \(notices) · 겹쳐 버림 \(dropped)")
+        return parts.joined(separator: " · ")
+    }
+}
+
 struct VowelZoneOverlayView: View {
     let center: CGPoint
     let zones: [VowelZoneGeometry.Zone]

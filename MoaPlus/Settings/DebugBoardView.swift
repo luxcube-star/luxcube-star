@@ -67,6 +67,20 @@ final class DebugBoardStore: ObservableObject {
         }
     }
 
+    /// 구역 보기 진단 (새모아 2026-11-28) — 앱이 든 스위치 값 · 앱이 저장소에서 바로 읽은 값 · 키보드가 적은 숫자.
+    private var vowelZoneLine: String {
+        let s = KeyboardSettings.shared
+        let held: String = s.showVowelZoneOnPress ? "켜짐" : "꺼짐"
+        let stored: String
+        switch s.storedShowVowelZoneOnPress() {
+        case .some(true): stored = "켜짐"
+        case .some(false): stored = "꺼짐"
+        case .none: stored = "없음"
+        }
+        let keyboard: String = s.vowelZoneDiagnostic ?? "(기록 없음 — 키보드에서 자음을 누르면 생김)"
+        return "앱 스위치 \(held) (앱이 읽은 저장소 값 \(stored)) / 키보드 \(keyboard)"
+    }
+
     var developerReport: String {
         let s = KeyboardSettings.shared
         let g = s.gestureSettings
@@ -83,6 +97,7 @@ final class DebugBoardStore: ObservableObject {
         조기 터치: \(s.earlyTouchDiagnostic ?? "(기록 없음)")
         조기 터치 (마지막 지연 기록): \(s.earlyTouchDelayedDiagnostic ?? "(없음)")
         햅틱: \(s.hapticDiagnostic ?? "(기록 없음)")
+        구역 보기: \(vowelZoneLine)
         자동 대문자: \(s.autoCapitalizeDiagnostic ?? "(아직 판정한 적 없음)")
         버릇 맞추기: \(s.gestureHabitEnabled ? "ON" : "OFF") / \(GestureHabitStore.loadShared()?.diagnosticLine ?? "(아직 기록 없음 — 전체 접근이 꺼져 있으면 앱에 안 옴)")
         단어 추천: \(s.predictionEnabled ? "ON" : "OFF") / 학습 \(s.predictionLearningEnabled ? "ON" : "OFF") / \(s.predictionDiagnostic ?? "(아직 기록 없음 — 키보드를 쓰고 닫으면 생김)")

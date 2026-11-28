@@ -1425,10 +1425,12 @@ class KeyboardViewModel: ObservableObject {
                 gestureAnalyzer.columnId = KeyboardMetrics.columnIndex(for: consonant)
                 gestureAnalyzer.forceCardinalOnly = false
                 gestureAnalyzer.habit = habitAdjustment(for: consonant)
-                setVowelZone(KeyboardSettings.shared.showVowelZoneOnPress
+                let zoneOn = KeyboardSettings.shared.showVowelZoneOnPress
+                setVowelZone(zoneOn
                              ? VowelZoneInfo(columnId: gestureAnalyzer.columnId,
                                              habitRotation: gestureAnalyzer.habit.rotationDeg)
                              : nil)
+                noteVowelZonePress(held: zoneOn)
             case .vowelPrimitive:
                 // ㅣ/ㅡ 키는 4방향 파생모음만 쓰므로 카디널 스냅으로 인식해
                 // 기운 긋기(↖↗↙↘)가 의도한 ←→↑↓ 로 가게 한다.
@@ -1726,6 +1728,32 @@ class KeyboardViewModel: ObservableObject {
     private func setVowelZone(_ zone: VowelZoneInfo?) {
         guard gestureState.vowelZone != zone else { return }
         gestureState.vowelZone = zone
+    }
+
+    /// 구역 보기 진단 (새모아 2026-11-28) — 이 키보드 실행 동안의 숫자. 앱 미리보기(`previewMode`)는 세지 않는다
+    /// (앱 프로세스가 키보드 기록을 덮지 않게).
+    private(set) var vowelZoneDiagnostics = VowelZoneDiagnostics()
+    private var lastVowelZoneDiagnosticWrite: Date?
+
+    private func noteVowelZonePress(held: Bool) {
+        guard !previewMode else { return }
+        let mismatch = vowelZoneDiagnostics.recordPress(
+            held: held, stored: KeyboardSettings.shared.storedShowVowelZoneOnPress())
+        // 첫 누름 · 이 실행의 첫 어긋남은 바로, 그 밖에는 2초에 한 번만 적는다(누를 때마다 쓰지 않게).
+        let firstMismatch = mismatch && vowelZoneDiagnostics.mismatches == 1
+        if firstMismatch || lastVowelZoneDiagnosticWrite.map({ Date().timeIntervalSince($0) >= 2 }) ?? true {
+            flushVowelZoneDiagnostic()
+        }
+    }
+
+    /// 지금까지의 숫자를 App Group 에 적는다. 키보드가 내려가거나 백그라운드로 갈 때 컨트롤러가 부른다.
+    func flushVowelZoneDiagnostic() {
+        guard !previewMode else { return }
+        let s = KeyboardSettings.shared
+        let load = s.lastLoad.map { (at: $0.at, reason: $0.reason.rawValue, vowelZone: $0.vowelZone) }
+        s.recordVowelZoneDiagnostic(vowelZoneDiagnostics.line(
+            lastLoad: load, notices: s.crossProcessNoticeCount, dropped: s.crossProcessDroppedCount))
+        lastVowelZoneDiagnosticWrite = Date()
     }
 
     private func habitAdjustment(for consonant: Choseong) -> GestureHabitAdjustment {

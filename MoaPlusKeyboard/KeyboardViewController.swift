@@ -89,7 +89,7 @@ class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedback {
         // first measure pass sees the user's layout/theme — otherwise the
         // initial frame uses defaults and visibly re-renders once
         // viewWillAppear's loadAll() lands.
-        KeyboardSettings.shared.loadAll()
+        KeyboardSettings.shared.loadAll(reason: .keyboardCreated)
         applyAppearanceMode()
         setupKeyboardView()
         observeHeightScale()
@@ -114,7 +114,7 @@ class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedback {
         // No forced layoutIfNeeded — letting UIKit/SwiftUI run their normal
         // layout pass once avoids a visible double-layout flicker on first
         // appearance.
-        KeyboardSettings.shared.loadAll()
+        KeyboardSettings.shared.loadAll(reason: .keyboardAppeared)
         applyAppearanceMode()
         // `viewDidLoad` 시점에는 아직 레이아웃 전이라 `safeAreaInsets.bottom` 이 0 이고,
         // 첫 제약 상수가 여백만큼 짧게 잡힌다. `viewSafeAreaInsetsDidChange` 가
@@ -194,6 +194,7 @@ class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedback {
         viewModel.flushPredictionSave()
         // 멈추면 저절로 띄기: 내려간 키보드가 1초 뒤에 공백을 넣지 않게 취소한다.
         viewModel.endAutoSpaceSession()
+        viewModel.flushVowelZoneDiagnostic()
         // The keyboard can be torn down mid-press — e.g. the host app presents
         // a photo picker while the finger is still holding backspace. The
         // repeat timer is driven by a Timer, not by touch events, so nothing
@@ -347,7 +348,7 @@ class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedback {
             // 앱의 단축어 편집도 어차피 못 받으니 다시 읽어 얻는 것이 없다
             // (`KeyboardHostActiveReloadTests`).
             if self?.hasFullAccess == true {
-                KeyboardSettings.shared.loadAll()
+                KeyboardSettings.shared.loadAll(reason: .hostReturned)
                 // 그사이 앱 「학습한 단어」 화면에서 고친 것도 반영한다.
                 self?.viewModel.applyPendingPredictionEdits()
             }
@@ -365,6 +366,7 @@ class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedback {
             self?.viewModel.resetGestureState()
             // 키보드를 띄운 채 리포트를 보내러 앱을 바꾸면 viewWillDisappear 가 안 온다.
             EarlyTouchDiagnostics.flush(force: true)
+            self?.viewModel.flushVowelZoneDiagnostic()
         }
     }
 
